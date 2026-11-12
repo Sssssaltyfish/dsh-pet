@@ -203,10 +203,12 @@ export const es: Record<Key, string> = {
   'physics.sensorSensitivityHint': 'Multiplicador de inclinación e inercia; un valor mayor aumenta la respuesta.',
   'physics.sensorDamping': 'Amortiguación',
   'physics.sensorDampingHint': 'Atenuación de velocidad por segundo; un valor mayor frena antes al dejar de agitar.',
-  'physics.shakeThreshold': 'Umbral de sacudida',
-  'physics.shakeThresholdHint': 'Aceleración sin gravedad en m/s²; un valor menor facilita el lanzamiento.',
-  'physics.shakeStrength': 'Fuerza de sacudida',
-  'physics.shakeStrengthHint': 'Multiplicador de velocidad al sacudir; se combina con la fuerza de lanzamiento.',
+  'physics.shakeThreshold': 'Umbral de impulso',
+  'physics.shakeThresholdHint':
+    'Aceleración del móvil hacia la parte superior de la pantalla en m/s². Un valor menor facilita el impulso.',
+  'physics.shakeStrength': 'Ayuda al impulso',
+  'physics.shakeStrengthHint':
+    'Multiplicador de la velocidad adicional hacia arriba. El valor 0 conserva la inercia física.',
   invalidSensorPhysics: 'Revisa el movimiento: sensibilidad / fuerza 0.25–4, amortiguación 0–8, umbral 4–30.',
   physicsHaptic: 'Vibración al chocar',
   physicsHapticHint:
@@ -214,9 +216,9 @@ export const es: Record<Key, string> = {
   physicsTilt: 'Gravedad por inclinación',
   physicsTiltHint:
     'Inclina el móvil para cambiar la dirección de la gravedad. La fuerza depende de la gravedad y de la sensibilidad al movimiento.',
-  physicsShake: 'Agitar para lanzar',
+  physicsShake: 'Inercia del movimiento',
   physicsShakeHint:
-    'Agita con fuerza para lanzar a la mascota. Si agitas el móvil en perpendicular a la pantalla, la mascota salta hacia arriba.',
+    'La mascota reacciona en sentido contrario al movimiento del móvil. Un gesto rápido hacia arriba puede darle impulso.',
   invalidPhysics:
     'Revisa los parámetros de física: gravedad / fricción con el suelo ≥ 0, rebote 0–1, fuerza de lanzamiento > 0.',
   fontTitle: 'Apariencia y fuente',

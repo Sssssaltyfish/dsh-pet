@@ -8,18 +8,22 @@ import { sensorPhysicsValue } from '../../shared/physics/sensor-settings.ts';
 import type { GravityVector } from '../../shared/physics.ts';
 import type { PhysicsParams } from '../../shared/types.ts';
 import { askSensorPermission } from './device-tilt.ts';
-import { sampleShake, STANDARD_GRAVITY, type ShakeSample } from './device-shake.ts';
+import type { FlickSample } from './device-shake.ts';
+import { createInertiaHistory, STANDARD_GRAVITY, type SensorForce } from './device-motion.ts';
+import { GRAVITY } from '../../shared/physics/constants.ts';
 
 /** 菜单读取的授权与采样状态。 */
 export type SensorStatus = 'off' | 'requesting' | 'waiting' | 'active' | 'denied' | 'unavailable' | 'paused';
 
-/** 屏幕平面内的力，以标准重力为单位，向右和向下为正。 */
-export interface SensorForce {
-  readonly x: number;
-  readonly y: number;
+export type { SensorForce } from './device-motion.ts';
+
+/** 分开的屏幕平面重力与惯性读数，向右和向下为正，单位为 g。 */
+export interface SensorReading {
+  readonly gravity: SensorForce | null;
+  readonly inertia: SensorForce | null;
 }
 
-type SensorListener = (shake?: ShakeSample | null) => void;
+type SensorListener = (motion?: FlickSample | null) => void;
 
 /** 传感器和视口使用的浏览器接口；测试注入自己的事件目标与时钟。 */
 export interface SensorEnvironment extends Pick<EventTarget, 'addEventListener' | 'removeEventListener'> {
@@ -45,30 +49,42 @@ export interface DevicePhysics {
   disable(): void;
   dispose(): void;
   subscribe(listener: SensorListener): () => void;
-  /** 返回最新的有效力。惯性必须已启用，且采样时刻不早于 motionSince（单调时钟，ms）。 */
-  read(includeInertia: boolean, motionSince?: number): SensorForce | null;
+  /** 读取当前重力与帧区间内的平均惯性。时间使用 performance.now()（ms）。 */
+  read(from?: number, now?: number): SensorReading | null;
 }
 
 const MOTION_MAX_AGE_MS = 1000;
 const WAIT_MS = 2000;
 const FILTER_MS = 45;
+const MOTION_NOISE_G = 0.015;
 const GRAVITY_FILTER_MS = 220;
 const MAX_FORCE = 3;
 const RAD = Math.PI / 180;
 const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
 
-function projectToScreen({ x, y }: SensorForce, env: SensorEnvironment): SensorForce {
+function screenAngle(env: SensorEnvironment): number {
   const degrees = env.screen?.orientation?.angle ?? env.orientation;
-  const angle = (finite(degrees) ? degrees : 0) * RAD;
+  return finite(degrees) ? degrees : 0;
+}
+
+function projectToScreen({ x, y }: SensorForce, degrees: number): SensorForce {
+  const angle = degrees * RAD;
   const c = Math.cos(angle);
   const s = Math.sin(angle);
   return { x: x * c + y * s, y: -x * s + y * c };
 }
 
-function apparentForce(x: number, y: number, maxForce = MAX_FORCE): SensorForce {
-  // 加速度计静置时读到向上的支撑力，惯性与重力均取反；CSS 的 Y 轴也取反。
+function apparentForce(x: number, y: number, maxForce: number): SensorForce {
+  // 加速度计静置时读到支撑力。惯性与重力取反，同时把设备 Y 轴换成 CSS 向下为正。
   const scale = Math.max(STANDARD_GRAVITY, Math.hypot(x, y) / maxForce);
   return { x: -x / scale, y: y / scale };
+}
+
+function limitInertia({ x, y }: SensorForce): SensorForce {
+  const magnitude = Math.hypot(x, y);
+  if (magnitude < MOTION_NOISE_G) return { x: 0, y: 0 };
+  const scale = Math.max(1, magnitude / 6);
+  return { x: x / scale, y: y / scale };
 }
 
 function filterForce(next: SensorForce, previous: SensorForce | null, dt: number, decayMs = FILTER_MS): SensorForce {
@@ -77,15 +93,21 @@ function filterForce(next: SensorForce, previous: SensorForce | null, dt: number
   return { x: previous.x + (next.x - previous.x) * alpha, y: previous.y + (next.y - previous.y) * alpha };
 }
 
-/** 用体感灵敏度把读数映射为加速度，将有效力限制在三个重力单位内。 */
-export function scaleSensorGravity(
-  force: SensorForce,
-  physics: Pick<PhysicsParams, 'gravity' | 'sensorSensitivity'>,
-): GravityVector {
+function scaleForce(force: SensorForce, acceleration: number, sensitivity: number): GravityVector {
   const magnitude = Math.hypot(force.x, force.y);
-  const sensitivity = sensorPhysicsValue(physics, 'sensorSensitivity');
   const gain = Math.min(sensitivity, magnitude > 0 ? MAX_FORCE / magnitude : sensitivity);
-  return { gx: force.x * gain * physics.gravity, gy: force.y * gain * physics.gravity };
+  return { gx: force.x * gain * acceleration, gy: force.y * gain * acceleration };
+}
+
+/** 把姿态重力与平面惯性相加。关闭倾斜时使用普通向下重力。 */
+export function sensorAcceleration(reading: SensorReading, physics: PhysicsParams): GravityVector | null {
+  const gravity = physics.tiltGravity !== false ? reading.gravity : null;
+  const inertia = physics.shakeThrow !== false ? reading.inertia : null;
+  if (!gravity && (!inertia || (inertia.x === 0 && inertia.y === 0))) return null;
+  const sensitivity = sensorPhysicsValue(physics, 'sensorSensitivity');
+  const weight = gravity ? scaleForce(gravity, physics.gravity, sensitivity) : { gx: 0, gy: physics.gravity };
+  const movement = inertia ? scaleForce(inertia, GRAVITY, sensitivity) : { gx: 0, gy: 0 };
+  return { gx: weight.gx + movement.gx, gy: weight.gy + movement.gy };
 }
 
 /** 创建一个可由菜单点击开启的页面体感控制器。 */
@@ -101,13 +123,13 @@ export function createDevicePhysics(env: SensorEnvironment = window): DevicePhys
   let listening = false;
   let timer: number | undefined;
   let orientation: SensorForce | null = null;
-  let motion: SensorForce | null = null;
-  let gravity: SensorForce | null = null;
-  let inertia: SensorForce | null = null;
+  let measuredGravity: SensorForce | null = null;
+  let estimatedGravity: SensorForce | null = null;
+  const inertia = createInertiaHistory();
   let lastMotion = -Infinity;
 
-  const publish = (shake?: ShakeSample | null): void => {
-    for (const listener of listeners) listener(shake);
+  const publish = (motion?: FlickSample | null): void => {
+    for (const listener of listeners) listener(motion);
   };
   const onViewport = (): void => publish();
   const clearTimer = (): void => {
@@ -124,35 +146,49 @@ export function createDevicePhysics(env: SensorEnvironment = window): DevicePhys
       return;
     }
     timer = undefined;
-    motion = gravity = inertia = null;
+    measuredGravity = estimatedGravity = null;
+    inertia.clear();
     refresh();
     publish();
   };
 
   const onMotion = (event: Event): void => {
     if (!listening || env.document.hidden) return;
-    const { acceleration: linear, accelerationIncludingGravity: total, rotationRate } = event as DeviceMotionEvent;
+    const { acceleration: linear, accelerationIncludingGravity: total } = event as DeviceMotionEvent;
     const full = total && finite(total.x) && finite(total.y) ? { x: total.x, y: total.y, z: total.z } : null;
     const pure = linear && finite(linear.x) && finite(linear.y) ? { x: linear.x, y: linear.y } : null;
-    const shake = sampleShake(linear, total, rotationRate);
-    if (!full && !pure && !shake) return;
     const now = env.performance.now();
+    if (!full && !pure) {
+      if (lastMotion !== -Infinity) {
+        inertia.add(now, null);
+        publish(null);
+      }
+      return;
+    }
     const dt = now - lastMotion;
-    motion = full ? filterForce(apparentForce(full.x, full.y), motion, dt) : null;
-    inertia = !full && pure ? filterForce(apparentForce(pure.x, pure.y), inertia, dt) : null;
-    if (full && pure) {
-      gravity = filterForce(apparentForce(full.x - pure.x, full.y - pure.y, 1), gravity, dt);
-    } else if (orientation || !full) {
-      gravity = null;
-    } else if (Math.hypot(full.x, full.y, full.z ?? 0) <= STANDARD_GRAVITY + 4) {
-      // 只有含重力读数时，慢速跟踪重力。剧烈晃动的读数不参与这份估算。
-      gravity = filterForce(apparentForce(full.x, full.y, 1), gravity, dt, GRAVITY_FILTER_MS);
+    measuredGravity =
+      full && pure ? filterForce(apparentForce(full.x - pure.x, full.y - pure.y, 1), measuredGravity, dt) : null;
+    if (full && !pure && !orientation) {
+      const magnitude = Math.hypot(full.x, full.y, finite(full.z) ? full.z : 0);
+      // 初始估算仅用平面分量。后续只用接近 1g 的样本校正，避免把晃动当重力。
+      if (!estimatedGravity || Math.abs(magnitude - STANDARD_GRAVITY) <= 2) {
+        estimatedGravity = filterForce(apparentForce(full.x, full.y, 1), estimatedGravity, dt, GRAVITY_FILTER_MS);
+      }
+    }
+    const gravity = measuredGravity ?? orientation ?? estimatedGravity;
+    if (pure) {
+      inertia.add(now, limitInertia(apparentForce(pure.x, pure.y, 6)));
+    } else if (full && gravity) {
+      const combined = apparentForce(full.x, full.y, 6);
+      inertia.add(now, limitInertia({ x: combined.x - gravity.x, y: combined.y - gravity.y }));
     }
     if (status !== 'active') clearTimer();
     lastMotion = now;
     timer ??= env.setTimeout(expireMotion, MOTION_MAX_AGE_MS);
     status = 'active';
-    publish(shake ? { ...shake, ...projectToScreen(shake, env) } : null);
+    const angle = screenAngle(env);
+    // 手势使用手机本身的运动方向。物理惯性使用相反方向。
+    publish(pure ? { ...projectToScreen({ x: pure.x, y: -pure.y }, angle), at: now, screenAngle: angle } : null);
   };
 
   const onOrientation = (event: Event): void => {
@@ -185,7 +221,8 @@ export function createDevicePhysics(env: SensorEnvironment = window): DevicePhys
     }
     listening = false;
     clearTimer();
-    motion = gravity = inertia = orientation = null;
+    measuredGravity = estimatedGravity = orientation = null;
+    inertia.clear();
     lastMotion = -Infinity;
   };
 
@@ -273,19 +310,17 @@ export function createDevicePhysics(env: SensorEnvironment = window): DevicePhys
         listeners.delete(listener);
       };
     },
-    read(includeInertia, motionSince = -Infinity) {
+    read(from, now = env.performance.now()) {
       if (!listening || env.document.hidden) return null;
-      const fresh = env.performance.now() - lastMotion < MOTION_MAX_AGE_MS;
-      if (!fresh) return orientation && projectToScreen(orientation, env);
-      const useInertia = includeInertia && lastMotion >= motionSince;
-      if (useInertia && inertia) {
-        const x = (orientation?.x ?? 0) + inertia.x;
-        const y = (orientation?.y ?? 0) + inertia.y;
-        const scale = Math.max(1, Math.hypot(x, y) / MAX_FORCE);
-        return projectToScreen({ x: x / scale, y: y / scale }, env);
-      }
-      const force = useInertia ? (motion ?? orientation) : (gravity ?? orientation);
-      return force && projectToScreen(force, env);
+      const gravity =
+        now - lastMotion < MOTION_MAX_AGE_MS ? (measuredGravity ?? orientation ?? estimatedGravity) : orientation;
+      const movement = inertia.read(now, from);
+      if (!gravity && !movement) return null;
+      const angle = screenAngle(env);
+      return {
+        gravity: gravity && projectToScreen(gravity, angle),
+        inertia: movement && projectToScreen(movement, angle),
+      };
     },
   };
 }

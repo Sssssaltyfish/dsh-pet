@@ -1,8 +1,15 @@
 /** 体感输入的授权、换轴与页面生命周期测试。 */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createDevicePhysics, scaleSensorGravity, type SensorEnvironment, type SensorForce } from './device-physics.ts';
-import type { ShakeSample } from './device-shake.ts';
+import {
+  createDevicePhysics,
+  sensorAcceleration,
+  type SensorReading,
+  type SensorEnvironment,
+  type SensorForce,
+} from './device-physics.ts';
+import type { FlickSample } from './device-shake.ts';
+import { DEFAULT_PHYSICS } from '../../shared/physics.ts';
 
 const G = 9.80665;
 
@@ -95,6 +102,14 @@ function force(actual: SensorForce | null, x: number, y: number): void {
   assert.ok(Math.abs(actual.y - y) < 1e-9, `y: ${actual.y} ≠ ${y}`);
 }
 
+function combined(reading: SensorReading | null): SensorForce | null {
+  if (!reading) return null;
+  return {
+    x: (reading.gravity?.x ?? 0) + (reading.inertia?.x ?? 0),
+    y: (reading.gravity?.y ?? 0) + (reading.inertia?.y ?? 0),
+  };
+}
+
 function pendingPermission() {
   let resolve!: (state: string) => void;
   const promise = new Promise<string>((done) => {
@@ -107,23 +122,23 @@ test('正向物理投影：手机竖立和右边放低时，两种传感器给�
   const f = fixture();
   await f.controller.enable();
   f.tilt(90, 0);
-  force(f.controller.read(true), 0, 1);
+  force(combined(f.controller.read()), 0, 1);
   f.motion({ x: 0, y: G });
-  force(f.controller.read(true), 0, 1);
+  force(combined(f.controller.read()), 0, 1);
 
   f.advance(1000);
   f.tilt(60, 30);
   const down = Math.sqrt(3) / 2;
-  force(f.controller.read(true), 0.25, down);
+  force(combined(f.controller.read()), 0.25, down);
   f.motion({ x: -G * 0.25, y: G * down });
-  force(f.controller.read(true), 0.25, down);
+  force(combined(f.controller.read()), 0.25, down);
   for (const [angle, x, y] of [
     [90, down, -0.25],
     [180, -0.25, -down],
     [270, -down, 0.25],
   ] as const) {
     f.orientation.angle = angle;
-    force(f.controller.read(true), x, y);
+    force(combined(f.controller.read()), x, y);
   }
 });
 
@@ -133,20 +148,21 @@ test('无有效读数时保持原物理；运动过期后改用静置姿态', as
   f.motion({ x: null, y: 0 });
   f.motion({ x: NaN, y: 1 }, { x: Infinity, y: 0 });
   f.tilt(null, 0);
-  assert.equal(f.controller.read(true), null);
+  assert.equal(f.controller.read(), null);
   f.advance(2000);
   assert.equal(f.controller.status, 'unavailable');
 
   f.tilt(30, 0);
   f.motion({ x: -G, y: 0 });
   assert.equal(f.controller.status, 'active');
-  force(f.controller.read(true), 1, 0);
-  f.advance(1000);
-  force(f.controller.read(true), 0, 0.5);
+  force(combined(f.controller.read()), 1, 0);
+  f.advance(81);
+  assert.equal(f.controller.read()?.inertia, null);
+  force(combined(f.controller.read()), 0, 0.5);
   f.advance(20_000);
-  force(f.controller.read(true), 0, 0.5);
+  force(combined(f.controller.read()), 0, 0.5);
   f.tilt(null, 0);
-  assert.equal(f.controller.read(true), null);
+  assert.equal(f.controller.read(), null);
   assert.equal(f.controller.status, 'unavailable');
 });
 
@@ -155,12 +171,12 @@ test('独立配置倾斜与惯性；缺含重力读数时合成姿态和线性�
   await f.controller.enable();
   f.tilt(30, 0);
   f.motion({ x: -G, y: G / 2 }, { x: -G, y: 0 });
-  force(f.controller.read(true), 1, 0.5);
-  force(f.controller.read(false), 0, 0.5);
+  force(combined(f.controller.read()), 1, 0.5);
+  force(f.controller.read()?.gravity ?? null, 0, 0.5);
 
   f.motion(null, { x: G, y: 0 });
-  force(f.controller.read(true), -1, 0.5);
-  force(f.controller.read(false), 0, 0.5);
+  force(combined(f.controller.read()), -1, 0.5);
+  force(f.controller.read()?.gravity ?? null, 0, 0.5);
 });
 
 test('两项权限同步申请；取消和重开复用待完成的授权；允许其中一项也可运行', async () => {
@@ -180,7 +196,7 @@ test('两项权限同步申请；取消和重开复用待完成的授权；允�
   assert.equal(f.window.count('deviceorientation'), 1);
   assert.equal(f.window.count('devicemotion'), 0);
   f.tilt(-90, 0);
-  force(f.controller.read(true), 0, -1);
+  force(combined(f.controller.read()), 0, -1);
 });
 
 test('拒绝授权可重试；卸载后晚到的授权不能重新挂监听', async () => {
@@ -219,7 +235,7 @@ test('宠物共享监听；隐藏、关闭和卸载清理所有数据和监听',
   assert.equal(changesA, changesB);
   f.hide(true);
   assert.equal(f.controller.status, 'paused');
-  assert.equal(f.controller.read(true), null);
+  assert.equal(f.controller.read(), null);
   assert.equal(f.window.count('devicemotion'), 0);
   assert.equal(f.orientation.count('change'), 0);
   assert.equal(f.visualViewport.count('resize'), 0);
@@ -229,7 +245,7 @@ test('宠物共享监听；隐藏、关闭和卸载清理所有数据和监听',
   off();
   f.hide(false);
   assert.equal(f.controller.status, 'waiting');
-  assert.equal(f.controller.read(true), null);
+  assert.equal(f.controller.read(), null);
   f.tilt(45, 10);
   assert.equal(changesB, changesA + 2);
   f.controller.disable();
@@ -256,40 +272,70 @@ test('非安全上下文不会请求传感器权限', async () => {
   assert.equal(f.window.count('devicemotion'), 0);
 });
 
-test('已经用于冲量的旧读数只提供重力，等待新的惯性读数', async () => {
+test('帧间短促脉冲也保留惯性积分，换帧率不会改变总速度增量', async () => {
   const f = fixture();
   await f.controller.enable();
-  f.tilt(30, 0);
-  f.motion({ x: -3 * G, y: G / 2 }, { x: -3 * G, y: 0 });
-  force(f.controller.read(true, 180), 0, 0.5);
-  f.advance(200);
-  force(f.controller.read(true, 180), 0, 0.5);
-  f.motion({ x: -G, y: G / 2 });
-  assert.ok(f.controller.read(true, 180)!.x > 0.9);
+  f.tilt(0, 0);
+  f.motion(null, { x: -2 * G, y: 0 });
+  f.advance(4);
+  f.motion(null, { x: 0, y: 0 });
+  f.advance(12);
+  assert.equal(f.controller.read()?.inertia?.x, 0);
+  const whole = f.controller.read(0, 16)?.inertia;
+  const first = f.controller.read(0, 8)?.inertia;
+  const second = f.controller.read(8, 16)?.inertia;
+  force(whole ?? null, 0.5, 0);
+  assert.equal(whole!.x * 16, first!.x * 8 + second!.x * 8);
 });
 
-test('共享控制器把平面冲量旋到屏幕坐标，并保留 Z 轴和转速', async () => {
+test('静置和 Z 轴运动没有平面惯性，真实加速度和表观惯性方向相反', async () => {
   const f = fixture();
-  const samples: ShakeSample[] = [];
-  f.controller.subscribe((shake) => {
-    if (shake) samples.push(shake);
+  const samples: FlickSample[] = [];
+  f.controller.subscribe((motion) => {
+    if (motion) samples.push(motion);
   });
   await f.controller.enable();
+  f.tilt(0, 0);
+  f.motion({ x: 0, y: 0, z: G + 35 }, { x: 0, y: 0, z: 35 }, { alpha: 500 });
+  force(f.controller.read()?.inertia ?? null, 0, 0);
+  force(samples[0] ?? null, 0, 0);
+
   f.orientation.angle = 90;
-  f.motion(null, { x: -10, y: 0, z: 30 }, { alpha: 120, beta: null, gamma: 160 });
-  const sample = samples[0];
-  assert.ok(sample);
-  force(sample, 0, -10);
-  assert.equal(sample.z, 30);
-  assert.equal(sample.rotation, 200);
+  f.motion(null, { x: -G, y: 0 });
+  force(samples[1] ?? null, 0, G);
+  force(f.controller.read()?.inertia ?? null, 0, -1);
 });
 
-test('连续重力受灵敏度控制，峰值不超过三个重力单位', () => {
-  assert.deepEqual(scaleSensorGravity({ x: 0.5, y: 0 }, { gravity: 1400 }), { gx: 1120, gy: 0 });
-  assert.deepEqual(scaleSensorGravity({ x: 0.5, y: 0 }, { gravity: 1400, sensorSensitivity: 0.5 }), {
-    gx: 350,
-    gy: 0,
+test('仅含重力读数也能驱动物理，不能提供上推手势', async () => {
+  const f = fixture();
+  let gestures = 0;
+  f.controller.subscribe((motion) => {
+    if (motion) gestures++;
   });
-  const max = scaleSensorGravity({ x: 2, y: 2 }, { gravity: 1400, sensorSensitivity: 4 });
-  assert.ok(Math.abs(Math.hypot(max.gx, max.gy) - 4200) < 1e-9);
+  await f.controller.enable();
+  f.motion({ x: 0, y: G, z: 0 });
+  force(f.controller.read()?.gravity ?? null, 0, 1);
+  force(f.controller.read()?.inertia ?? null, 0, 0);
+  f.advance(16);
+  f.motion({ x: -2 * G, y: G, z: 0 });
+  force(f.controller.read()?.inertia ?? null, 2, 0);
+  assert.equal(gestures, 0);
+});
+
+test('仅含重力设备的首个 Z 轴脉冲也不会改变平面力', async () => {
+  const f = fixture();
+  await f.controller.enable();
+  f.motion({ x: 0, y: G, z: 35 });
+  force(f.controller.read()?.gravity ?? null, 0, 1);
+  force(f.controller.read()?.inertia ?? null, 0, 0);
+});
+
+test('倾斜与平面惯性可独立开关，重力为零时仍有平面惯性', () => {
+  const reading = { gravity: { x: 0.5, y: 0 }, inertia: { x: 0, y: -1 } };
+  const physics = { ...DEFAULT_PHYSICS, gravity: 1400 };
+  assert.deepEqual(sensorAcceleration(reading, physics), { gx: 1120, gy: -2240 });
+  assert.deepEqual(sensorAcceleration(reading, { ...physics, tiltGravity: false }), { gx: 0, gy: -840 });
+  assert.deepEqual(sensorAcceleration(reading, { ...physics, shakeThrow: false }), { gx: 1120, gy: 0 });
+  assert.deepEqual(sensorAcceleration(reading, { ...physics, gravity: 0 }), { gx: 0, gy: -2240 });
+  assert.equal(sensorAcceleration(reading, { ...physics, shakeThrow: false, tiltGravity: false }), null);
 });

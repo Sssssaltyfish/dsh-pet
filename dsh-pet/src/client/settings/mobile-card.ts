@@ -40,7 +40,7 @@ export function makeMobileCard(rt: SettingsRuntime): FunctionComponent<MobileCar
       children: [
         cardHead(t('mobileTitle'), t('mobileHint')),
         h('div', {
-          className: 'dsh-pet-cfg__grid4',
+          className: 'dsh-pet-cfg__grid4 dsh-pet-cfg__physicsNumbers',
           children: (Object.keys(SENSOR_PHYSICS_SETTINGS) as (keyof typeof SENSOR_PHYSICS_SETTINGS)[]).map((key) => {
             const setting = SENSOR_PHYSICS_SETTINGS[key];
             return h(

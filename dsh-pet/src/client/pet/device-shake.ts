@@ -1,77 +1,91 @@
-/** 将运动事件的平移与旋转读数换算为有上限的摇晃冲量。 */
+/** 从真实平面加速度识别短促上推手势。惯性本身由飞行循环独立积分。 */
 import { sensorPhysicsValue } from '../../shared/physics/sensor-settings.ts';
 import type { PhysicsParams } from '../../shared/types.ts';
 
-/** 标准重力加速度（m/s²）。 */
-export const STANDARD_GRAVITY = 9.80665;
-
-/** 每只宠物两次摇晃冲量之间的最短间隔（ms）。 */
-export const SHAKE_COOLDOWN_MS = 300;
-
-/** 冲量后暂时只采纳重力，避免同一次摇晃又作为连续惯性叠加（ms）。 */
-export const SHAKE_INERTIA_PAUSE_MS = 180;
-
-/** 屏幕坐标中的表观加速度（m/s²）及设备转动速率（度/s）。 */
-export interface ShakeSample {
+/** 手机的实际加速度（m/s²），屏幕坐标向右、向下为正。 */
+export interface FlickSample {
   readonly x: number;
   readonly y: number;
-  readonly z: number;
-  readonly rotation: number;
+  readonly at: number;
+  readonly screenAngle: number;
 }
 
-/** 摇晃冲量（px/s）。 */
-export interface ShakeVector {
-  readonly vx: number;
-  readonly vy: number;
-}
+type FlickConfig = Pick<PhysicsParams, 'shakeThreshold' | 'shakeStrength' | 'throwPower'>;
 
-type Axis = number | null;
-type Acceleration = { readonly x: Axis; readonly y: Axis; readonly z: Axis };
-type Rotation = { readonly alpha: Axis; readonly beta: Axis; readonly gamma: Axis };
+const MIN_LOBE_MS = 25;
+const MAX_LOBE_MS = 220;
+const MAX_SAMPLE_GAP_MS = 65;
+const MIN_DELTA_SPEED = 0.35;
+const MAX_ACCELERATION = 45;
+const PIXELS_PER_METRE = 300;
+const MAX_BOOST_SPEED = 1200;
+const FLICK_COOLDOWN_MS = 280;
 
-const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
-const finiteOrZero = (value: unknown): number => (finite(value) ? value : 0);
+/** 手势只在完整的向上加速段结束时返回一次向上的速度增量（px/s）。 */
+export function createUpwardFlick() {
+  let previous: FlickSample | null = null;
+  let startedAt: number | null = null;
+  let deltaSpeed = 0;
+  let upwardSamples = 0;
+  let blocked = false;
+  let lastBoost = -Infinity;
 
-function readAcceleration(raw: Acceleration | null | undefined) {
-  if (!raw || ![raw.x, raw.y, raw.z].some(finite)) return null;
-  return { x: finiteOrZero(raw.x), y: finiteOrZero(raw.y), z: finiteOrZero(raw.z) };
-}
+  const clearLobe = (): void => {
+    startedAt = null;
+    deltaSpeed = 0;
+    upwardSamples = 0;
+    blocked = false;
+  };
 
-/** 线性加速度优先。含重力读数只用超过 1g 的部分触发摇晃，静态转向不会发射。 */
-export function sampleShake(
-  linear: Acceleration | null,
-  total: Acceleration | null,
-  rotation: Rotation | null,
-): ShakeSample | null {
-  const pure = readAcceleration(linear);
-  const combined = pure ?? readAcceleration(total);
-  if (!combined) return null;
-  const magnitude = Math.hypot(combined.x, combined.y, combined.z);
-  if (!Number.isFinite(magnitude) || magnitude === 0) return null;
-  const gain = pure ? 1 : Math.max(0, 1 - STANDARD_GRAVITY / magnitude);
-  if (gain === 0) return null;
-  const spin = Math.hypot(finiteOrZero(rotation?.alpha), finiteOrZero(rotation?.beta), finiteOrZero(rotation?.gamma));
-  return { x: -combined.x * gain, y: combined.y * gain, z: combined.z * gain, rotation: spin };
-}
-
-type ShakeConfig = Pick<PhysicsParams, 'shakeThreshold' | 'shakeStrength' | 'throwPower'>;
-
-/** 以平面运动为主，沿屏幕法线的摇晃转换为向上弹跳。 */
-export function shakeImpulse(sample: ShakeSample, physics: ShakeConfig): ShakeVector | null {
-  const magnitude = Math.hypot(sample.x, sample.y, sample.z);
-  if (!Number.isFinite(magnitude) || magnitude === 0) return null;
-  const threshold = sensorPhysicsValue(physics, 'shakeThreshold');
-  // 转动只增强同时测得的平移，避免原地转手机或传感器噪声单独触发。
-  const rotationBonus = Math.min(6, Math.max(0, finiteOrZero(sample.rotation) - 80) * 0.025);
-  const strength = magnitude + rotationBonus * Math.min(1, magnitude / threshold);
-  if (strength < threshold) return null;
-  const x = sample.x / magnitude;
-  const y = sample.y / magnitude - (Math.abs(sample.z) / magnitude) * 0.75;
-  const planar = Math.hypot(x, y);
-  const speed = Math.min(
-    3200,
-    (300 + (strength - threshold) * 65) * sensorPhysicsValue(physics, 'shakeStrength') * physics.throwPower,
-  );
-  if (planar < 0.05) return { vx: 0, vy: -speed };
-  return { vx: x === 0 ? 0 : (x / planar) * speed, vy: (y / planar) * speed };
+  return {
+    reset(): void {
+      previous = null;
+      clearLobe();
+      lastBoost = -Infinity;
+    },
+    sample(current: FlickSample | null, physics: FlickConfig): number {
+      const strength = sensorPhysicsValue(physics, 'shakeStrength');
+      const before = previous;
+      previous = current;
+      if (!current || strength === 0) {
+        clearLobe();
+        return 0;
+      }
+      const gap = before ? current.at - before.at : Infinity;
+      const continuous = before && gap > 0 && gap <= MAX_SAMPLE_GAP_MS && current.screenAngle === before.screenAngle;
+      if (!continuous) clearLobe();
+      const threshold = sensorPhysicsValue(physics, 'shakeThreshold');
+      const up = -current.y;
+      const upward = up >= threshold && up >= Math.abs(current.x);
+      if (startedAt === null) {
+        if (upward && !blocked) {
+          startedAt = current.at;
+          upwardSamples = 1;
+        } else if (!upward) blocked = false;
+        return 0;
+      }
+      const elapsed = current.at - startedAt;
+      if (!continuous || elapsed > MAX_LOBE_MS) {
+        clearLobe();
+        blocked = upward;
+        return 0;
+      }
+      // 用上一份样本覆盖它到下一份样本之间的时长。没有下一份读数就不会凭空完成手势。
+      deltaSpeed += (Math.min(-before.y, MAX_ACCELERATION) * gap) / 1000;
+      if (upward) {
+        upwardSamples++;
+        return 0;
+      }
+      const boost =
+        upwardSamples >= 2 &&
+        elapsed >= MIN_LOBE_MS &&
+        deltaSpeed >= MIN_DELTA_SPEED &&
+        current.at - lastBoost >= FLICK_COOLDOWN_MS
+          ? Math.min(MAX_BOOST_SPEED, deltaSpeed * PIXELS_PER_METRE * strength * physics.throwPower)
+          : 0;
+      if (boost > 0) lastBoost = current.at;
+      clearLobe();
+      return boost;
+    },
+  };
 }

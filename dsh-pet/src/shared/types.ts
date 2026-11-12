@@ -177,15 +177,15 @@ export interface PhysicsParams {
   petCollision: boolean;
   /** 体感开启后用设备姿态决定重力方向（默认开启）。强度由 gravity 与 sensorSensitivity 决定。 */
   tiltGravity?: boolean;
-  /** 摇一摇抛出（默认开启）。冲量独立于重力。false 时只处理倾斜重力。 */
+  /** 平面运动惯性及上推助力（默认开启）。关闭后只使用重力。 */
   shakeThrow?: boolean;
   /** 连续体感力的增益倍率，0.25–4，默认 1.6。 */
   sensorSensitivity?: number;
   /** 体感飞行的速度衰减率（/s），0–8，默认 2。 */
   sensorDamping?: number;
-  /** 触发一次摇晃冲量的加速度阈值（m/s²），4–30，默认 10。 */
+  /** 上推助力的加速度阈值（m/s²），4–30，默认 10。 */
   shakeThreshold?: number;
-  /** 摇晃冲量的增益倍率，0.25–4，默认 1.2。 */
+  /** 上推助力的速度倍率，0–4，默认 1.2。0 时保留物理惯性。 */
   shakeStrength?: number;
   /** 碰撞触觉反馈：true（默认）时撞墙 / 落地 / 撞顶与宠物互撞各震一下。
    *  仅浏览器半侧生效，且要求环境有 Vibration API——iOS 与桌面端没有，静默跳过。

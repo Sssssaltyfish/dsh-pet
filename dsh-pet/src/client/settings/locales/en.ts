@@ -199,10 +199,11 @@ export const en: Record<Key, string> = {
   'physics.sensorSensitivityHint': 'Tilt and inertia multiplier; higher values make the pet respond more readily.',
   'physics.sensorDamping': 'Motion damping',
   'physics.sensorDampingHint': 'Velocity decay per second; higher values settle the pet sooner after shaking stops.',
-  'physics.shakeThreshold': 'Shake threshold',
-  'physics.shakeThresholdHint': 'm/s² of acceleration without gravity; lower values trigger a throw more easily.',
-  'physics.shakeStrength': 'Shake strength',
-  'physics.shakeStrengthHint': 'Shake launch speed multiplier; combines with throw power.',
+  'physics.shakeThreshold': 'Upward flick threshold',
+  'physics.shakeThresholdHint':
+    'Phone acceleration toward the top of the screen in m/s². Lower values make the boost easier to trigger.',
+  'physics.shakeStrength': 'Upward flick boost',
+  'physics.shakeStrengthHint': 'Extra upward speed multiplier. Set to 0 to keep physical inertia alone.',
   invalidSensorPhysics: 'Check motion values: sensitivity / strength 0.25–4, damping 0–8, threshold 4–30.',
   physicsHaptic: 'Collision haptics',
   physicsHapticHint:
@@ -210,8 +211,9 @@ export const en: Record<Key, string> = {
   physicsTilt: 'Tilt gravity',
   physicsTiltHint:
     'Tilt the phone to change the direction of gravity. Its strength depends on the gravity and motion sensitivity settings.',
-  physicsShake: 'Shake to throw',
-  physicsShakeHint: 'Shake firmly to throw the pet. A shake perpendicular to the screen makes it hop upward.',
+  physicsShake: 'Motion inertia',
+  physicsShakeHint:
+    'The pet reacts opposite to the phone’s movement. A quick flick toward the screen top can add an upward boost.',
   invalidPhysics: 'Check the physics values: gravity / ground friction ≥ 0, bounciness 0–1, throw power > 0.',
   fontTitle: 'Appearance & font',
   fontHint:

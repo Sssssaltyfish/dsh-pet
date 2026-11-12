@@ -6,7 +6,7 @@ export const SENSOR_PHYSICS_SETTINGS = {
   sensorSensitivity: { min: 0.25, max: 4, step: 0.05, defaultValue: 1.6 },
   sensorDamping: { min: 0, max: 8, step: 0.1, defaultValue: 2 },
   shakeThreshold: { min: 4, max: 30, step: 0.5, defaultValue: 10 },
-  shakeStrength: { min: 0.25, max: 4, step: 0.05, defaultValue: 1.2 },
+  shakeStrength: { min: 0, max: 4, step: 0.05, defaultValue: 1.2 },
 } as const;
 
 /** 体感设置字段名。 */

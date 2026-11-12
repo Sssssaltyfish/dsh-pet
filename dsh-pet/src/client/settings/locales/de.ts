@@ -200,11 +200,12 @@ export const de: Record<Key, string> = {
   'physics.sensorDamping': 'Bewegungsdämpfung',
   'physics.sensorDampingHint':
     'Geschwindigkeitsabnahme pro Sekunde; höhere Werte beruhigen den Pet nach dem Schütteln schneller.',
-  'physics.shakeThreshold': 'Schüttelschwelle',
+  'physics.shakeThreshold': 'Anhebschwelle',
   'physics.shakeThresholdHint':
-    'Beschleunigung ohne Schwerkraft in m/s²; niedrigere Werte lösen leichter einen Wurf aus.',
-  'physics.shakeStrength': 'Schüttelstärke',
-  'physics.shakeStrengthHint': 'Faktor für die Abwurfgeschwindigkeit beim Schütteln; wirkt zusätzlich zur Wurfkraft.',
+    'Handybeschleunigung zum oberen Bildschirmrand in m/s². Kleinere Werte lösen die Anhebhilfe leichter aus.',
+  'physics.shakeStrength': 'Anhebhilfe',
+  'physics.shakeStrengthHint':
+    'Multiplikator für den zusätzlichen Aufwärtsschwung. Bei 0 bleibt die physikalische Trägheit aktiv.',
   invalidSensorPhysics: 'Bewegungswerte prüfen: Empfindlichkeit / Stärke 0.25–4, Dämpfung 0–8, Schwelle 4–30.',
   physicsHaptic: 'Kollisions-Vibration',
   physicsHapticHint:
@@ -212,9 +213,9 @@ export const de: Record<Key, string> = {
   physicsTilt: 'Schwerkraft per Neigung',
   physicsTiltHint:
     'Durch Neigen des Handys ändert sich die Richtung der Schwerkraft. Ihre Stärke hängt von der eingestellten Schwerkraft und der Bewegungsempfindlichkeit ab.',
-  physicsShake: 'Schütteln zum Werfen',
+  physicsShake: 'Bewegungsträgheit',
   physicsShakeHint:
-    'Kräftiges Schütteln schleudert das Haustier. Eine Bewegung senkrecht zum Bildschirm lässt es nach oben springen.',
+    'Das Haustier reagiert entgegen der Handybewegung. Eine kurze Bewegung zum oberen Bildschirmrand kann Aufwärtsschwung geben.',
   invalidPhysics: 'Bitte Physikwerte prüfen: Schwerkraft / Bodenreibung ≥ 0, Elastizität 0–1, Wurfkraft > 0.',
   fontTitle: 'Aussehen & Schrift',
   fontHint:

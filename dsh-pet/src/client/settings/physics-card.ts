@@ -49,7 +49,7 @@ export function makePhysicsCard(rt: SettingsRuntime): FunctionComponent<PhysicsC
       children: [
         cardHead(t('physicsTitle'), t('physicsHint')),
         h('div', {
-          className: 'dsh-pet-cfg__grid4',
+          className: 'dsh-pet-cfg__grid4 dsh-pet-cfg__physicsNumbers',
           children: [
             physField('gravity', '50', '0'),
             physField('restitution', '0.01', '0'),

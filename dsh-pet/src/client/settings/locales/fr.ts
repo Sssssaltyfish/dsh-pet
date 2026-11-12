@@ -204,10 +204,12 @@ export const fr: Record<Key, string> = {
   'physics.sensorDamping': 'Amortissement',
   'physics.sensorDampingHint':
     'Décroissance de la vitesse par seconde ; une valeur élevée stabilise plus vite après une secousse.',
-  'physics.shakeThreshold': 'Seuil de secousse',
-  'physics.shakeThresholdHint': 'Accélération sans gravité en m/s² ; une valeur basse facilite le lancer.',
-  'physics.shakeStrength': 'Force de secousse',
-  'physics.shakeStrengthHint': 'Multiplicateur de vitesse au lancer par secousse ; se combine avec la force de lancer.',
+  'physics.shakeThreshold': 'Seuil de poussée',
+  'physics.shakeThresholdHint':
+    'Accélération du téléphone vers le haut de l’écran en m/s². Une valeur basse facilite le déclenchement de l’élan.',
+  'physics.shakeStrength': 'Élan vertical',
+  'physics.shakeStrengthHint':
+    'Multiplicateur de la vitesse supplémentaire vers le haut. La valeur 0 conserve l’inertie physique.',
   invalidSensorPhysics: 'Vérifiez le mouvement : sensibilité / force 0.25–4, amortissement 0–8, seuil 4–30.',
   physicsHaptic: 'Vibration aux collisions',
   physicsHapticHint:
@@ -215,9 +217,9 @@ export const fr: Record<Key, string> = {
   physicsTilt: 'Gravité par inclinaison',
   physicsTiltHint:
     'Inclinez le téléphone pour changer la direction de la gravité. Son intensité dépend de la gravité et de la sensibilité aux mouvements.',
-  physicsShake: 'Secouer pour lancer',
+  physicsShake: 'Inertie du mouvement',
   physicsShakeHint:
-    'Secouez vivement le téléphone pour lancer le compagnon. Un mouvement perpendiculaire à l’écran le fait bondir vers le haut.',
+    'Le compagnon réagit dans le sens opposé au mouvement du téléphone. Un geste bref vers le haut peut lui donner un élan.',
   invalidPhysics:
     'Vérifiez les paramètres physiques : gravité / frottement au sol ≥ 0, rebond entre 0 et 1, force de lancer > 0.',
   fontTitle: 'Apparence et police',

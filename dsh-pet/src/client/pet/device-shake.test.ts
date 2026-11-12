@@ -1,57 +1,61 @@
-/** 验证普通握持、剧烈摇晃、屏幕法线弹跳及冲量配置。 */
+/** 用采样时间验证上推手势的方向、积分和上限。 */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { sampleShake, shakeImpulse, STANDARD_GRAVITY } from './device-shake.ts';
+import type { PhysicsParams } from '../../shared/types.ts';
+import { createUpwardFlick, type FlickSample } from './device-shake.ts';
 
-const defaultPhysics = { throwPower: 1 };
+const physics = { throwPower: 1 };
+const sample = (at: number, y: number, x = 0, screenAngle = 0): FlickSample => ({ at, x, y, screenAngle });
 
-test('只提供含重力读数时，转动静置的重力向量不会触发摇晃', () => {
-  const spin = { alpha: 700, beta: 400, gamma: null };
-  for (const total of [
-    { x: 0, y: 0, z: STANDARD_GRAVITY },
-    { x: -STANDARD_GRAVITY, y: 0, z: 0 },
-    { x: 0, y: STANDARD_GRAVITY, z: 0 },
-    { x: STANDARD_GRAVITY / Math.SQRT2, y: 0, z: STANDARD_GRAVITY / Math.SQRT2 },
-  ]) {
-    const sample = sampleShake(null, total, spin);
-    assert.ok(!sample || !shakeImpulse(sample, { ...defaultPhysics, shakeThreshold: 4 }));
+function push(
+  times: number[],
+  y: number,
+  end: number,
+  config: Pick<PhysicsParams, 'throwPower' | 'shakeStrength' | 'shakeThreshold'> = physics,
+): number {
+  const flick = createUpwardFlick();
+  for (const at of times) assert.equal(flick.sample(sample(at, y), config), 0);
+  return flick.sample(sample(end, -y), config);
+}
+
+test('向上加速段完成后只给一次冲量，同样的积分不依赖采样分段', () => {
+  const uniform = push([0, 20, 40, 60, 80], -30, 100);
+  const irregular = push([0, 17, 41, 69, 90], -30, 100);
+  assert.ok(Math.abs(uniform - 1080) < 1e-9);
+  assert.ok(Math.abs(uniform - irregular) < 1e-9);
+  assert.ok(push([0, 20, 40], -30, 60) < uniform);
+});
+
+test('短噪声、单点尖峰、水平晃动和持续加速都不产生上推冲量', () => {
+  assert.equal(push([0, 5, 10], -45, 15), 0);
+  assert.equal(push([0], -45, 40), 0);
+  assert.equal(push([0, 30, 60], -3, 90), 0);
+  assert.equal(push([0, 40, 80, 120, 160, 200, 240, 280], -45, 320), 0);
+  const horizontal = createUpwardFlick();
+  for (let i = 0; i < 10; i++) {
+    assert.equal(horizontal.sample(sample(i * 16, -12, i % 2 ? -40 : 40), physics), 0);
   }
-  assert.equal(sampleShake(null, { x: null, y: null, z: null }, spin), null);
+  assert.equal(horizontal.sample(sample(160, 0), physics), 0);
 });
 
-test('线性读数优先。很强的屏幕法线加速度即使缺横纵轴也能向上发射', () => {
-  const total = { x: -60, y: 0, z: STANDARD_GRAVITY };
-  const stationary = sampleShake({ x: 0, y: 0, z: 0 }, total, null);
-  assert.equal(stationary, null);
-  for (const z of [-30, 30]) {
-    const sample = sampleShake({ x: null, y: null, z }, total, null);
-    assert.ok(sample);
-    const kick = shakeImpulse(sample, defaultPhysics);
-    assert.equal(kick?.vx, 0);
-    assert.ok(kick && kick.vy < -1600);
-  }
+test('缺失读数、间隔太长或屏幕换向不会补完旧手势', () => {
+  const flick = createUpwardFlick();
+  assert.equal(flick.sample(sample(0, -40), physics), 0);
+  assert.equal(flick.sample(sample(35, -40), physics), 0);
+  assert.equal(flick.sample(null, physics), 0);
+  assert.equal(flick.sample(sample(50, 40), physics), 0);
+  assert.equal(flick.sample(sample(90, -40), physics), 0);
+  assert.equal(flick.sample(sample(120, -40), physics), 0);
+  assert.equal(flick.sample(sample(190, 40), physics), 0);
+  assert.equal(flick.sample(sample(200, -40), physics), 0);
+  assert.equal(flick.sample(sample(220, -40), physics), 0);
+  assert.equal(flick.sample(sample(240, 40, 0, 90), physics), 0);
 });
 
-test('含重力设备仍能识别剧烈晃动并保留方向', () => {
-  const sample = sampleShake(null, { x: -34, y: 12, z: STANDARD_GRAVITY }, null);
-  assert.ok(sample);
-  const kick = shakeImpulse(sample, defaultPhysics);
-  assert.ok(kick && kick.vx > 1500);
-});
-
-test('转速只增强已有的平移。阈值、摇晃力度和总力度独立生效', () => {
-  const small = { x: 8, y: 0, z: 0, rotation: 0 };
-  assert.equal(shakeImpulse(small, defaultPhysics), null);
-  assert.ok(shakeImpulse(small, { ...defaultPhysics, shakeThreshold: 6 }));
-  assert.ok(shakeImpulse({ ...small, rotation: 300 }, defaultPhysics));
-  assert.equal(shakeImpulse({ ...small, x: 0, rotation: 500 }, defaultPhysics), null);
-  const sample = { ...small, x: 16, rotation: 0 };
-  const kick = shakeImpulse(sample, { throwPower: 1, shakeStrength: 1 });
-  const twice = shakeImpulse(sample, { throwPower: 1, shakeStrength: 2 });
-  const doubledThrow = shakeImpulse(sample, { throwPower: 2, shakeStrength: 1 });
-  assert.ok(kick && twice);
-  assert.equal(twice.vx, kick.vx * 2);
-  assert.deepEqual(doubledThrow, twice);
-  assert.equal(shakeImpulse(sample, { ...defaultPhysics, shakeThreshold: 20 }), null);
-  assert.equal(Math.hypot(...Object.values(shakeImpulse({ ...sample, x: 1000 }, defaultPhysics)!)), 3200);
+test('阈值、力度和零力度开关只控制上推辅助', () => {
+  const times = [0, 20, 40, 60, 80];
+  assert.equal(push(times, -24, 100, { ...physics, shakeThreshold: 25 }), 0);
+  assert.equal(push(times, -24, 100, { ...physics, shakeStrength: 0 }), 0);
+  assert.ok(Math.abs(push(times, -24, 100, { ...physics, shakeStrength: 0.5 }) - 360) < 1e-9);
+  assert.equal(push(times, -100, 100, { ...physics, shakeStrength: 4 }), 1200);
 });

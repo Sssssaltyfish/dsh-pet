@@ -6,8 +6,8 @@
  */
 import { createFlight, type Flight, type FlightMetrics } from '../motion/flight.ts';
 import { createHaptics, type Haptics } from '../haptics.ts';
-import { scaleSensorGravity, type DevicePhysics } from '../device-physics.ts';
-import { shakeImpulse, SHAKE_COOLDOWN_MS, SHAKE_INERTIA_PAUSE_MS } from '../device-shake.ts';
+import { sensorAcceleration, type DevicePhysics } from '../device-physics.ts';
+import { createUpwardFlick } from '../device-shake.ts';
 import { createPositionFollow, type PositionFollow } from '../motion/position-follow.ts';
 import { createSquashDriver, type SquashDriver } from '../motion/squash.ts';
 import { createWalk, type Walk } from '../motion/walk.ts';
@@ -96,14 +96,14 @@ export function createCardMotion(rt: CardMotionRuntime) {
 
   return function useCardMotion(input: CardMotionInput): CardMotion {
     const { arena, card, cfgRef, live, metrics, moves, petId, root, sensors, setAnim, setOnce, setCustomPos } = input;
-    const lastShake = useRef(-Infinity);
-    const shakeArmed = useRef(true);
+    const flickRef = useRef<ReturnType<typeof createUpwardFlick> | null>(null);
+    flickRef.current ??= createUpwardFlick();
+    const flick = flickRef.current;
     const sensorBlocked = (): boolean => live.current.drag.isActive() || live.current.sensorBlocked();
-    const sensorGravity = (): GravityVector | null => {
-      const physics = cfgRef.current.physics;
-      if (physics.tiltGravity === false || sensorBlocked()) return null;
-      const force = sensors.current?.read(physics.shakeThrow !== false, lastShake.current + SHAKE_INERTIA_PAUSE_MS);
-      return force ? scaleSensorGravity(force, physics) : null;
+    const sensorGravity = (from?: number, now?: number): GravityVector | null => {
+      if (sensorBlocked()) return null;
+      const reading = sensors.current?.read(from, now);
+      return reading ? sensorAcceleration(reading, cfgRef.current.physics) : null;
     };
 
     /** 当帧走位参数：走位驱动长期持有，每渲染就地更新，避免把尺寸与动画池闭包进旧实例。 */
@@ -228,39 +228,34 @@ export function createCardMotion(rt: CardMotionRuntime) {
     const wakeSensorsRef = useRef<(() => void) | null>(null);
     wakeSensorsRef.current ??= () => {
       if (!sensorMounted.current) return;
-      if (document.hidden || !sensors.current?.enabled) {
-        lastShake.current = -Infinity;
-        shakeArmed.current = true;
+      const physics = cfgRef.current.physics;
+      if (
+        document.hidden ||
+        !sensors.current?.enabled ||
+        (physics.shakeThrow === false && physics.tiltGravity === false)
+      ) {
+        flick.reset();
         flight.settleHeld();
         return;
       }
       if (!sensorGravity()) return;
       if (sensorFrame.current !== null || flight.isFlying()) return;
+      const requestedAt = performance.now();
       sensorFrame.current = requestAnimationFrame(() => {
         sensorFrame.current = null;
-        flight.startHeld(stopMove);
+        flight.startHeld(stopMove, requestedAt);
       });
     };
     const wakeSensors = wakeSensorsRef.current;
     useEffect(() => {
       sensorMounted.current = true;
-      const unsubscribe = sensors.current?.subscribe((shake) => {
+      const unsubscribe = sensors.current?.subscribe((motion) => {
         const physics = cfgRef.current.physics;
-        if (shake !== undefined) {
-          const kick = shake && physics.shakeThrow !== false ? shakeImpulse(shake, physics) : null;
-          // 只有新的运动读数回到阈值以下才重新待命。持续的一次加速只产生一个冲量。
-          if (!kick) shakeArmed.current = true;
-          const now = performance.now();
-          if (
-            kick &&
-            shakeArmed.current &&
-            now - lastShake.current >= SHAKE_COOLDOWN_MS &&
-            !sensorBlocked() &&
-            flight.shake(kick, stopMove)
-          ) {
-            lastShake.current = now;
-            shakeArmed.current = false;
-          }
+        if (!sensors.current?.enabled || document.hidden || physics.shakeThrow === false || sensorBlocked()) {
+          flick.reset();
+        } else if (motion !== undefined) {
+          const boost = flick.sample(motion, physics);
+          if (boost > 0) flight.boostUp(boost, stopMove);
         }
         wakeSensors();
       });
@@ -272,7 +267,7 @@ export function createCardMotion(rt: CardMotionRuntime) {
         flight.stop();
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps -- 回调只读稳定的 ref 与驱动。
-    }, [sensors, flight, wakeSensors]);
+    }, [sensors, flight, flick, wakeSensors]);
 
     const { gravity, sensorSensitivity, shakeThrow, tiltGravity } = cfgRef.current.physics;
     useEffect(wakeSensors, [wakeSensors, metrics.size, gravity, sensorSensitivity, shakeThrow, tiltGravity]);

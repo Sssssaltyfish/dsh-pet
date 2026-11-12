@@ -337,78 +337,113 @@ describe('createFlight —— 体感飞行', () => {
     }
   });
 
-  test('传感器静默时体感起步的宠物停在最后一个位置', () => {
+  test('失去读数后不继续施加旧惯性，保留速度并恢复普通重力', () => {
     const frames = withFakeFrames();
     try {
       let gravity: GravityVector | null = { gx: 500, gy: 0 };
-      const { flight, finals, root } = harness({ gravity: () => gravity });
+      const { flight, root } = harness({ gravity: () => gravity });
       assert.equal(
         flight.startHeld(() => {}),
         true,
       );
       frames.tick(16);
-      const before = root.style.left;
+      const vx = flight.velocity().vx;
+      const before = Number.parseFloat(root.style.left);
       gravity = null;
       frames.tick(16);
-      assert.equal(root.style.left, before);
-      assert.equal(finals.length, 1);
-      assert.equal(frames.queued, 0);
+      assert.ok(Number.parseFloat(root.style.left) > before);
+      assert.ok(flight.velocity().vx < vx);
+      assert.ok(flight.velocity().vy > 0);
     } finally {
       frames.restore();
     }
   });
-  test('停在地面时，剧烈横向摇晃让宠物向上离地，即使关闭倾斜', () => {
+
+  test('物理上推手机时宠物贴地，刹停的反向惯性使它自然离地', () => {
     const frames = withFakeFrames();
     try {
-      const { flight, box, root } = harness();
+      let gravity: GravityVector = { gx: 0, gy: 4900 };
+      const { flight, box, root } = harness({ gravity: () => gravity });
       const ground = viewport.height - metrics.halfH * 2;
       root.getBoundingClientRect = () => ({ x: 400, y: ground, left: 400, top: ground }) as DOMRect;
       assert.equal(
-        flight.shake({ vx: 2500, vy: 500 }, () => {}),
-        true,
+        flight.startHeld(() => {}),
+        false,
       );
-      assert.ok(flight.velocity().vy <= -500);
-      for (let i = 0; i < 10; i++) frames.tick(16);
-      assert.ok(box() && box()!.y < ground - 40);
-    } finally {
-      frames.restore();
-    }
-  });
+      assert.equal(frames.queued, 0);
 
-  test('摇晃让贴在右上角的宠物向场内飞，且飞行期间可以再加上冲量', () => {
-    const frames = withFakeFrames();
-    try {
-      const { flight, root, box } = harness({ gravity: () => ({ gx: 800, gy: -800 }) });
-      const right = viewport.width - metrics.size + metrics.sideAllow;
-      root.getBoundingClientRect = () => ({ x: right, y: 0, left: right, top: 0 }) as DOMRect;
+      gravity = { gx: 0, gy: -2200 };
       assert.equal(
-        flight.shake({ vx: 600, vy: -900 }, () => {}),
+        flight.startHeld(() => {}),
         true,
       );
       frames.tick(16);
-      assert.ok(box() && box()!.x < right && box()!.y > 0);
-      const before = flight.velocity().vy;
+      const natural = flight.velocity().vy;
+      assert.ok(natural < 0 && box()!.y < ground);
+
       assert.equal(
-        flight.shake({ vx: 0, vy: 700 }, () => assert.fail('不应重新起飞')),
+        flight.boostUp(700, () => assert.fail('已有飞行不应重置位置')),
         true,
       );
-      assert.ok(flight.velocity().vy > before);
+      assert.equal(flight.velocity().vy, natural - 700);
+      assert.equal(flight.velocity().vx, 0);
+      frames.tick(16);
+      assert.ok(box()!.y < ground - 10);
     } finally {
       frames.restore();
     }
   });
 
-  test('提高体感阻尼让同样的冲量更快慢下来', () => {
+  test('静止时唤醒到首帧之间的短脉冲仍可推动宠物', () => {
+    const frames = withFakeFrames();
+    try {
+      const { flight, box } = harness({
+        gravity: (from = 0, now = 0) => (from === 0 && now >= 4 ? { gx: 600, gy: 0 } : null),
+      });
+      frames.tick(16);
+      assert.equal(
+        flight.startHeld(() => {}, 0),
+        true,
+      );
+      frames.tick(16);
+      assert.ok(box()!.x > 400);
+      assert.ok(flight.velocity().vx > 0);
+    } finally {
+      frames.restore();
+    }
+  });
+
+  test('水平晃动贴地滑行，无人工法向速度', () => {
+    const frames = withFakeFrames();
+    try {
+      const { flight, root, box } = harness({ gravity: () => ({ gx: 1800, gy: 1400 }) });
+      const ground = viewport.height - metrics.halfH * 2;
+      root.getBoundingClientRect = () => ({ x: 400, y: ground, left: 400, top: ground }) as DOMRect;
+      assert.equal(
+        flight.startHeld(() => {}),
+        true,
+      );
+      for (let i = 0; i < 10; i++) frames.tick(16);
+      assert.ok(box()!.x > 410);
+      assert.equal(box()!.y, ground);
+      assert.equal(flight.velocity().vy, 0);
+    } finally {
+      frames.restore();
+    }
+  });
+
+  test('提高体感阻尼让同样的速度更快衰减', () => {
     const frames = withFakeFrames();
     try {
       const run = (sensorDamping: number) => {
-        const { flight } = harness({ physics: { ...DEFAULT_PHYSICS, gravity: 0, sensorDamping } });
+        const { flight, root } = harness({ physics: { ...DEFAULT_PHYSICS, gravity: 0, sensorDamping } });
+        root.getBoundingClientRect = () => ({ x: 400, y: 250, left: 400, top: 250 }) as DOMRect;
         assert.equal(
-          flight.shake({ vx: 500, vy: 0 }, () => {}),
+          flight.boostUp(500, () => {}),
           true,
         );
         for (let i = 0; i < 10; i++) frames.tick(16);
-        const speed = flight.velocity().vx;
+        const speed = -flight.velocity().vy;
         flight.stop();
         return speed;
       };

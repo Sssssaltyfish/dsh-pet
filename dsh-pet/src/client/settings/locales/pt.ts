@@ -202,10 +202,11 @@ export const pt: Record<Key, string> = {
   'physics.sensorDamping': 'Amortecimento',
   'physics.sensorDampingHint':
     'Redução da velocidade por segundo; valores maiores estabilizam o pet mais rápido após a sacudida.',
-  'physics.shakeThreshold': 'Limiar de sacudida',
-  'physics.shakeThresholdHint': 'Aceleração sem gravidade em m/s²; valores menores facilitam o arremesso.',
-  'physics.shakeStrength': 'Força da sacudida',
-  'physics.shakeStrengthHint': 'Multiplicador da velocidade ao sacudir; combina com a força de arremesso.',
+  'physics.shakeThreshold': 'Limiar de impulso',
+  'physics.shakeThresholdHint':
+    'Aceleração do celular em direção ao topo da tela em m/s². Valores menores facilitam o impulso.',
+  'physics.shakeStrength': 'Auxílio ao impulso',
+  'physics.shakeStrengthHint': 'Multiplicador da velocidade adicional para cima. O valor 0 mantém a inércia física.',
   invalidSensorPhysics: 'Confira o movimento: sensibilidade / força 0.25–4, amortecimento 0–8, limiar 4–30.',
   physicsHaptic: 'Vibração ao colidir',
   physicsHapticHint:
@@ -213,9 +214,9 @@ export const pt: Record<Key, string> = {
   physicsTilt: 'Gravidade por inclinação',
   physicsTiltHint:
     'Incline o celular para mudar a direção da gravidade. A força depende da gravidade e da sensibilidade ao movimento.',
-  physicsShake: 'Sacudir para arremessar',
+  physicsShake: 'Inércia do movimento',
   physicsShakeHint:
-    'Sacuda o celular com força para arremessar o pet. Sacudir na direção perpendicular à tela faz o pet saltar para cima.',
+    'O pet reage no sentido oposto ao movimento do celular. Um gesto rápido para cima pode dar impulso extra.',
   invalidPhysics:
     'Revise os valores de física: gravidade / atrito com o chão ≥ 0, restituição 0–1, força de arremesso > 0.',
   fontTitle: 'Aparência e fonte',

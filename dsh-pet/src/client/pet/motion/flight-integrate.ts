@@ -108,25 +108,3 @@ export function integrateSensorFlight(
   const atRest = Math.hypot(current.vx, current.vy) < 1 && !sensorCanMove(current, bounds, g);
   return { ...result, ...current, bounced: hit !== null, atRest, hit };
 }
-
-function kickAxis(position: number, min: number, max: number, velocity: number, kick: number, release: number): number {
-  if (min === max) return 0;
-  if (position <= min + 2) return Math.max(release, Math.abs(kick) + Math.max(0, velocity));
-  if (position >= max - 2) return -Math.max(release, Math.abs(kick) + Math.max(0, -velocity));
-  return velocity + kick;
-}
-
-/** 把贴边时的摇晃冲量导入可见区域，留出足够法向速度脱离接触面。 */
-export function sensorKickVelocity(
-  state: ThrowState,
-  bounds: FlightBounds,
-  kick: Pick<ThrowState, 'vx' | 'vy'>,
-  speedLimit: number,
-): Pick<ThrowState, 'vx' | 'vy'> {
-  const release = Math.min(550, Math.hypot(kick.vx, kick.vy) * 0.28);
-  const vx = kickAxis(state.x, bounds.minX, bounds.maxX, state.vx, kick.vx, release);
-  const vy = kickAxis(state.y, bounds.minY, bounds.maxY, state.vy, kick.vy, release);
-  const speed = Math.hypot(vx, vy);
-  const gain = speed > speedLimit ? speedLimit / speed : 1;
-  return { vx: vx * gain, vy: vy * gain };
-}

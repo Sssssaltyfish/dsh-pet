@@ -76,6 +76,7 @@ const SETTINGS_CSS = [
 
   '@container (max-width:600px){.dsh-pet-cfg__grid4{grid-template-columns:repeat(2,minmax(0,1fr))}}',
   '@container (max-width:400px){.dsh-pet-cfg__grid2,.dsh-pet-cfg__grid3,.dsh-pet-cfg__grid4{grid-template-columns:minmax(0,1fr)}}',
+  '@container (min-width:324px) and (max-width:400px){.dsh-pet-cfg__grid4.dsh-pet-cfg__physicsNumbers{grid-template-columns:repeat(2,minmax(0,1fr))}}',
 
   '.dsh-pet-cfg__field{display:flex;flex-direction:column;gap:4px;min-width:0}',
   '.dsh-pet-cfg__flabel{display:inline-flex;align-items:center;gap:5px;font-size:12px;color:var(--dsw-alias-label-secondary)}',

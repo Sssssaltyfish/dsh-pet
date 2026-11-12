@@ -905,7 +905,7 @@ describe('saveUserConfig —— 物理参数 physics（白名单 + 透传保留�
     const old = { ...PHYS };
     for (const key of ['sensorSensitivity', 'sensorDamping', 'shakeThreshold', 'shakeStrength']) delete old[key];
     assert.deepEqual(saveOnce({ pets: PETS, physics: old })?.physics, old);
-    const physics = { ...old, sensorSensitivity: 2.25, sensorDamping: 0, shakeThreshold: 4, shakeStrength: 4 };
+    const physics = { ...old, sensorSensitivity: 2.25, sensorDamping: 0, shakeThreshold: 4, shakeStrength: 0 };
     assert.deepEqual(saveOnce({ pets: PETS, physics })?.physics, physics);
     for (const patch of [
       { sensorSensitivity: 0 },

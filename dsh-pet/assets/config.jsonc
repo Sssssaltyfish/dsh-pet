@@ -197,12 +197,12 @@
   // hapticEnabled：碰撞震动。true（默认）= 撞墙/落地/撞顶与宠物互撞时各震一下；
   //   只在支持 Vibration API 的浏览器生效（安卓），iOS 与桌面端没有硬件，会静默跳过。
   // tiltGravity：体感开启后，用设备姿态决定重力方向。gravity 为 0 时倾斜不产生加速度。默认 true。
-  // shakeThrow：剧烈晃动会产生冲量，沿屏幕法线的晃动会让宠物向上弹跳。默认 true。
+  // shakeThrow：启用屏幕平面内的运动惯性与上推助力。默认 true。
   //   浏览器体感需要 HTTPS 或 localhost。长按或右键打开宠物菜单即可开启。
   // sensorSensitivity：连续体感力倍率，范围 0.25–4，默认 1.6。
   // sensorDamping：体感飞行的速度衰减率（/s），范围 0–8，默认 2。
-  // shakeThreshold：触发摇晃冲量的加速度阈值（m/s²），范围 4–30，默认 10。
-  // shakeStrength：摇晃冲量倍率，与 throwPower 相乘后受速度上限保护，范围 0.25–4，默认 1.2。
+  // shakeThreshold：上推助力的加速度阈值（m/s²），范围 4–30，默认 10。
+  // shakeStrength：上推助力的速度倍率，范围 0–4，默认 1.2。设为 0 时保留物理惯性。
   "physics": {
     "gravity": 1400,
     "restitution": 0.78,
