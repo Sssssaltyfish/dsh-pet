@@ -1,7 +1,8 @@
 /** 体感输入的授权、换轴与页面生命周期测试。 */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createDevicePhysics, type SensorEnvironment, type SensorForce } from './device-physics.ts';
+import { createDevicePhysics, scaleSensorGravity, type SensorEnvironment, type SensorForce } from './device-physics.ts';
+import type { ShakeSample } from './device-shake.ts';
 
 const G = 9.80665;
 
@@ -73,9 +74,9 @@ function fixture(overrides: Partial<SensorEnvironment> = {}) {
       }
       now = end;
     },
-    motion(total: unknown, acceleration: unknown = null) {
+    motion(total: unknown, acceleration: unknown = null, rotationRate: unknown = null) {
       window.dispatchEvent(
-        Object.assign(new Event('devicemotion'), { accelerationIncludingGravity: total, acceleration }),
+        Object.assign(new Event('devicemotion'), { accelerationIncludingGravity: total, acceleration, rotationRate }),
       );
     },
     tilt(beta: number | null, gamma: number | null) {
@@ -253,4 +254,42 @@ test('非安全上下文不会请求传感器权限', async () => {
   assert.equal(f.controller.status, 'unavailable');
   assert.equal(f.controller.enabled, false);
   assert.equal(f.window.count('devicemotion'), 0);
+});
+
+test('已经用于冲量的旧读数只提供重力，等待新的惯性读数', async () => {
+  const f = fixture();
+  await f.controller.enable();
+  f.tilt(30, 0);
+  f.motion({ x: -3 * G, y: G / 2 }, { x: -3 * G, y: 0 });
+  force(f.controller.read(true, 180), 0, 0.5);
+  f.advance(200);
+  force(f.controller.read(true, 180), 0, 0.5);
+  f.motion({ x: -G, y: G / 2 });
+  assert.ok(f.controller.read(true, 180)!.x > 0.9);
+});
+
+test('共享控制器把平面冲量旋到屏幕坐标，并保留 Z 轴和转速', async () => {
+  const f = fixture();
+  const samples: ShakeSample[] = [];
+  f.controller.subscribe((shake) => {
+    if (shake) samples.push(shake);
+  });
+  await f.controller.enable();
+  f.orientation.angle = 90;
+  f.motion(null, { x: -10, y: 0, z: 30 }, { alpha: 120, beta: null, gamma: 160 });
+  const sample = samples[0];
+  assert.ok(sample);
+  force(sample, 0, -10);
+  assert.equal(sample.z, 30);
+  assert.equal(sample.rotation, 200);
+});
+
+test('连续重力受灵敏度控制，峰值不超过三个重力单位', () => {
+  assert.deepEqual(scaleSensorGravity({ x: 0.5, y: 0 }, { gravity: 1400 }), { gx: 1120, gy: 0 });
+  assert.deepEqual(scaleSensorGravity({ x: 0.5, y: 0 }, { gravity: 1400, sensorSensitivity: 0.5 }), {
+    gx: 350,
+    gy: 0,
+  });
+  const max = scaleSensorGravity({ x: 2, y: 2 }, { gravity: 1400, sensorSensitivity: 4 });
+  assert.ok(Math.abs(Math.hypot(max.gx, max.gy) - 4200) < 1e-9);
 });

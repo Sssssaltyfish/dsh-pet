@@ -191,15 +191,22 @@ export const ja: Record<Key, string> = {
   physicsCeilingBounceHint: 'オフにすると、投げたペットが画面の上端を越えて飛び出せます（重力が引き戻します）',
   physicsPetCollision: 'ペット同士の衝突',
   physicsPetCollisionHint: '飛行中のペットが他のペットに当たると、運動量保存に従って弾き返されます（質量 ∝ サイズ²）',
+  'physics.sensorSensitivity': '体感の感度',
+  'physics.sensorSensitivityHint': '傾きと慣性の倍率。大きいほど動きに敏感になります。',
+  'physics.sensorDamping': '動きの減衰',
+  'physics.sensorDampingHint': '1 秒あたりの速度の減衰。大きいほど振るのをやめた後に早く落ち着きます。',
+  'physics.shakeThreshold': '振動のしきい値',
+  'physics.shakeThresholdHint': '重力を除いた加速度（m/s²）。小さいほど投げ上げやすくなります。',
+  'physics.shakeStrength': '振って投げる強さ',
+  'physics.shakeStrengthHint': '振ったときの初速の倍率。「投げる力」と掛け合わせます。',
+  invalidSensorPhysics: '体感の値を確認してください：感度 / 強さ 0.25–4、減衰 0–8、しきい値 4–30。',
   physicsHaptic: '衝突時の振動',
   physicsHapticHint:
     '壁・床・天井・ペット同士の衝突ごとに 1 回振動します。Chrome / Edge で動作。iOS と Via のような WebView ブラウザでは無効。サイレント/集中モードは振動を止めます。',
   physicsTilt: '傾きで重力',
-  physicsTiltHint:
-    '端末を傾けると重力がそちらへ向かいます（大きさは上の重力値）。重力が 0 のときは傾けても効果がありません。HTTPS/localhost が必要です。',
+  physicsTiltHint: '端末を傾けると重力の向きが変わります。強さは重力と体感感度で調整できます。',
   physicsShake: '振って投げる',
-  physicsShakeHint:
-    '振った方向へペットを飛ばします。強さは投げる力（throwPower）に比例し、重力とは無関係なので重力 0 でも使えます。HTTPS/localhost が必要です。',
+  physicsShakeHint: '端末を強く振るとペットが飛びます。画面に垂直な方向へ振ると上に跳ねます。',
   invalidPhysics: '物理パラメータを確認してください：重力 / 地面摩擦 ≥ 0、弾性 0～1、投げる力 > 0。',
   fontTitle: '外観とフォント',
   fontHint:

@@ -901,6 +901,23 @@ describe('saveUserConfig —— 物理参数 physics（白名单 + 透传保留�
     assert.equal(saveOnce({ pets: PETS, physics: { ...PHYS, shakeThrow: 1 } }), null);
   });
 
+  test('体感参数可选、合法值按原值落盘、越界与非数字拒绝', () => {
+    const old = { ...PHYS };
+    for (const key of ['sensorSensitivity', 'sensorDamping', 'shakeThreshold', 'shakeStrength']) delete old[key];
+    assert.deepEqual(saveOnce({ pets: PETS, physics: old })?.physics, old);
+    const physics = { ...old, sensorSensitivity: 2.25, sensorDamping: 0, shakeThreshold: 4, shakeStrength: 4 };
+    assert.deepEqual(saveOnce({ pets: PETS, physics })?.physics, physics);
+    for (const patch of [
+      { sensorSensitivity: 0 },
+      { sensorDamping: 9 },
+      { shakeThreshold: '4' },
+      { shakeStrength: -1 },
+      { shakeStrength: Infinity },
+    ]) {
+      assert.equal(saveOnce({ pets: PETS, physics: { ...physics, ...patch } }), null);
+    }
+  });
+
   test('非法值 → 整体拒绝（宿主回 400；与读取侧 physicsValid 同一套规则）', () => {
     const bad: Array<[string, unknown]> = [
       ['restitution > 1', { ...PHYS, restitution: 1.5 }],

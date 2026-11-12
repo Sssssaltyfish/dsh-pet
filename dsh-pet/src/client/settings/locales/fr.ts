@@ -198,15 +198,26 @@ export const fr: Record<Key, string> = {
   physicsPetCollision: 'Collisions entre compagnons',
   physicsPetCollisionHint:
     'Un compagnon en vol rebondit sur les autres en conservant la quantité de mouvement (masse ∝ taille²)',
+  'physics.sensorSensitivity': 'Sensibilité au mouvement',
+  'physics.sensorSensitivityHint':
+    'Multiplicateur d’inclinaison et d’inertie ; une valeur élevée augmente la réactivité.',
+  'physics.sensorDamping': 'Amortissement',
+  'physics.sensorDampingHint':
+    'Décroissance de la vitesse par seconde ; une valeur élevée stabilise plus vite après une secousse.',
+  'physics.shakeThreshold': 'Seuil de secousse',
+  'physics.shakeThresholdHint': 'Accélération sans gravité en m/s² ; une valeur basse facilite le lancer.',
+  'physics.shakeStrength': 'Force de secousse',
+  'physics.shakeStrengthHint': 'Multiplicateur de vitesse au lancer par secousse ; se combine avec la force de lancer.',
+  invalidSensorPhysics: 'Vérifiez le mouvement : sensibilité / force 0.25–4, amortissement 0–8, seuil 4–30.',
   physicsHaptic: 'Vibration aux collisions',
   physicsHapticHint:
     'Une vibration par impact (murs, sol, plafond, autres compagnons). Fonctionne dans Chrome/Edge ; pas sur iOS ni dans les coques WebView comme Via. Le mode Ne pas déranger la bloque.',
   physicsTilt: 'Gravité par inclinaison',
   physicsTiltHint:
-    'Inclinez le téléphone : la gravité suit (valeur = celle ci-dessus) ; avec une gravité à 0, l’inclinaison n’a aucun effet. Nécessite HTTPS/localhost.',
+    'Inclinez le téléphone pour changer la direction de la gravité. Son intensité dépend de la gravité et de la sensibilité aux mouvements.',
   physicsShake: 'Secouer pour lancer',
   physicsShakeHint:
-    'Secouez pour lancer le compagnon dans le sens du geste ; la force suit throwPower. Indépendant de la gravité, donc utilisable à gravité 0. Nécessite HTTPS/localhost.',
+    'Secouez vivement le téléphone pour lancer le compagnon. Un mouvement perpendiculaire à l’écran le fait bondir vers le haut.',
   invalidPhysics:
     'Vérifiez les paramètres physiques : gravité / frottement au sol ≥ 0, rebond entre 0 et 1, force de lancer > 0.',
   fontTitle: 'Apparence et police',

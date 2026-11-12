@@ -1,42 +1,7 @@
-/** 摇一摇冲量与设置页传感器授权的回归测试。 */
+/** 设置页请求浏览器传感器权限的回归测试。 */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { requestMotionPermission, SHAKE_THRESHOLD, shakeImpulse } from './device-tilt.ts';
-
-describe('shakeImpulse —— 摇一摇的冲量', () => {
-  test('低于阈值 → null', () => {
-    assert.equal(shakeImpulse(SHAKE_THRESHOLD - 1, 0, 0, 1), null);
-    assert.equal(shakeImpulse(0, 0, 0, 1), null);
-  });
-
-  test('只有垂直方向（横向为零）→ null（方向不可用，不随机乱甩）', () => {
-    assert.equal(shakeImpulse(0, 0, 100, 1), null);
-  });
-
-  test('方向与甩动方向一致（沿横向/纵向加速度向量）', () => {
-    const out = shakeImpulse(30, 40, 0, 1);
-    assert.ok(out);
-    assert.ok(out.vx > 0 && out.vy > 0);
-    assert.ok(Math.abs(out.vy / out.vx - 40 / 30) < 1e-9, '方向应为 3:4');
-  });
-
-  test('力度 = 基准 × throwPower', () => {
-    const once = shakeImpulse(30, 40, 0, 1);
-    const twice = shakeImpulse(30, 40, 0, 2);
-    assert.ok(once && twice);
-    assert.ok(Math.abs(twice.vx - once.vx * 2) < 1e-9, '总力度翻倍应让冲量翻倍');
-    assert.ok(Math.abs(twice.vy - once.vy * 2) < 1e-9);
-  });
-
-  test('加速度越大力度越大，但有上限', () => {
-    const soft = shakeImpulse(20, 0, 0, 1);
-    const hard = shakeImpulse(100, 0, 0, 1);
-    const insane = shakeImpulse(10000, 0, 0, 1);
-    assert.ok(soft && hard && insane);
-    assert.ok(hard.vx > soft.vx, '加速度更大应更猛');
-    assert.equal(hard.vx, insane.vx, '超过封顶后不再涨');
-  });
-});
+import { requestMotionPermission } from './device-tilt.ts';
 
 /** 临时装上假的传感器构造器（模拟 iOS 13+ 的 requestPermission）；返回撤销函数。 */
 function stubSensorGlobals(stubs: Record<string, unknown>): () => void {

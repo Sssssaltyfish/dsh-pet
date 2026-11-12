@@ -38,6 +38,12 @@ export {
   THROW_SPEED_ANCHOR,
   TRAIL_KEEP_MS,
 } from './physics/constants.ts';
+export {
+  SENSOR_PHYSICS_SETTINGS,
+  sensorPhysicsValid,
+  sensorPhysicsValue,
+  type SensorPhysicsKey,
+} from './physics/sensor-settings.ts';
 export { landingSquash, squashScale } from './physics/squash.ts';
 export {
   screenOfBox,

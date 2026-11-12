@@ -7,10 +7,11 @@
  * @module dsh-pet/src/client/settings/mobile-card
  */
 import type { FunctionComponent } from 'react';
+import { SENSOR_PHYSICS_SETTINGS } from '../../shared/physics.ts';
 import type { PhysicsParams } from '../../shared/types.ts';
 import { requestMotionPermission } from '../pet/device-tilt.ts';
 import type { SettingsRuntime } from './runtime.ts';
-import { makeUiKit } from './ui.ts';
+import { makeUiKit, numberInputProps } from './ui.ts';
 
 /** 移动端效果卡的输入。 */
 export interface MobileCardProps {
@@ -30,7 +31,7 @@ export interface MobileCardProps {
  */
 export function makeMobileCard(rt: SettingsRuntime): FunctionComponent<MobileCardProps> {
   const { h, t } = rt;
-  const { cardHead, toggleCell } = makeUiKit({ h, t });
+  const { cardHead, field, toggleCell } = makeUiKit({ h, t });
 
   return function MobileCard(props: MobileCardProps) {
     const { busy, physics } = props;
@@ -38,6 +39,36 @@ export function makeMobileCard(rt: SettingsRuntime): FunctionComponent<MobileCar
       className: 'dsh-pet-cfg__card',
       children: [
         cardHead(t('mobileTitle'), t('mobileHint')),
+        h('div', {
+          className: 'dsh-pet-cfg__grid4',
+          children: (Object.keys(SENSOR_PHYSICS_SETTINGS) as (keyof typeof SENSOR_PHYSICS_SETTINGS)[]).map((key) => {
+            const setting = SENSOR_PHYSICS_SETTINGS[key];
+            return h(
+              'div',
+              {
+                children: field(
+                  t('physics.' + key),
+                  h(
+                    'input',
+                    numberInputProps(
+                      physics[key] ?? setting.defaultValue,
+                      (value) => props.onChange({ [key]: value }),
+                      {
+                        min: setting.min,
+                        max: setting.max,
+                        step: setting.step,
+                        disabled: busy,
+                        'aria-label': t('physics.' + key),
+                      },
+                    ),
+                  ),
+                  t('physics.' + key + 'Hint'),
+                ),
+              },
+              key,
+            );
+          }),
+        }),
         h('div', {
           className: 'dsh-pet-cfg__grid3',
           children: [

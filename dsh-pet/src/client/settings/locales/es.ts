@@ -199,15 +199,24 @@ export const es: Record<Key, string> = {
     'Desactívalo para que un lanzamiento pueda salir por la parte superior de la pantalla (la gravedad sigue tirando de él hacia abajo)',
   physicsPetCollision: 'Colisiones entre mascotas',
   physicsPetCollisionHint: 'Una mascota en vuelo rebota contra las demás conservando el momento (masa ∝ tamaño²)',
+  'physics.sensorSensitivity': 'Sensibilidad al movimiento',
+  'physics.sensorSensitivityHint': 'Multiplicador de inclinación e inercia; un valor mayor aumenta la respuesta.',
+  'physics.sensorDamping': 'Amortiguación',
+  'physics.sensorDampingHint': 'Atenuación de velocidad por segundo; un valor mayor frena antes al dejar de agitar.',
+  'physics.shakeThreshold': 'Umbral de sacudida',
+  'physics.shakeThresholdHint': 'Aceleración sin gravedad en m/s²; un valor menor facilita el lanzamiento.',
+  'physics.shakeStrength': 'Fuerza de sacudida',
+  'physics.shakeStrengthHint': 'Multiplicador de velocidad al sacudir; se combina con la fuerza de lanzamiento.',
+  invalidSensorPhysics: 'Revisa el movimiento: sensibilidad / fuerza 0.25–4, amortiguación 0–8, umbral 4–30.',
   physicsHaptic: 'Vibración al chocar',
   physicsHapticHint:
     'Una vibración por impacto (paredes, suelo, techo, otras mascotas). Funciona en Chrome/Edge; no en iOS ni en navegadores WebView como Via. El modo No molestar la bloquea.',
   physicsTilt: 'Gravedad por inclinación',
   physicsTiltHint:
-    'Inclina el móvil y la gravedad lo sigue (magnitud = el valor de arriba); con gravedad en 0 la inclinación no hace nada. Requiere HTTPS/localhost.',
+    'Inclina el móvil para cambiar la dirección de la gravedad. La fuerza depende de la gravedad y de la sensibilidad al movimiento.',
   physicsShake: 'Agitar para lanzar',
   physicsShakeHint:
-    'Agita para lanzar la mascota en la dirección del gesto; la fuerza escala con throwPower. No depende de la gravedad, así que funciona con gravedad 0. Requiere HTTPS/localhost.',
+    'Agita con fuerza para lanzar a la mascota. Si agitas el móvil en perpendicular a la pantalla, la mascota salta hacia arriba.',
   invalidPhysics:
     'Revisa los parámetros de física: gravedad / fricción con el suelo ≥ 0, rebote 0–1, fuerza de lanzamiento > 0.',
   fontTitle: 'Apariencia y fuente',

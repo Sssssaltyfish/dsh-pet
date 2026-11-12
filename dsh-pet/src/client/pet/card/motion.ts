@@ -6,8 +6,8 @@
  */
 import { createFlight, type Flight, type FlightMetrics } from '../motion/flight.ts';
 import { createHaptics, type Haptics } from '../haptics.ts';
-import { shakeImpulse } from '../device-tilt.ts';
-import type { DevicePhysics } from '../device-physics.ts';
+import { scaleSensorGravity, type DevicePhysics } from '../device-physics.ts';
+import { shakeImpulse, SHAKE_COOLDOWN_MS, SHAKE_INERTIA_PAUSE_MS } from '../device-shake.ts';
 import { createPositionFollow, type PositionFollow } from '../motion/position-follow.ts';
 import { createSquashDriver, type SquashDriver } from '../motion/squash.ts';
 import { createWalk, type Walk } from '../motion/walk.ts';
@@ -96,12 +96,14 @@ export function createCardMotion(rt: CardMotionRuntime) {
 
   return function useCardMotion(input: CardMotionInput): CardMotion {
     const { arena, card, cfgRef, live, metrics, moves, petId, root, sensors, setAnim, setOnce, setCustomPos } = input;
+    const lastShake = useRef(-Infinity);
+    const shakeArmed = useRef(true);
     const sensorBlocked = (): boolean => live.current.drag.isActive() || live.current.sensorBlocked();
     const sensorGravity = (): GravityVector | null => {
-      const { gravity, tiltGravity, shakeThrow } = cfgRef.current.physics;
-      if (tiltGravity === false || sensorBlocked()) return null;
-      const force = sensors.current?.read(shakeThrow !== false);
-      return force ? { gx: force.x * gravity, gy: force.y * gravity } : null;
+      const physics = cfgRef.current.physics;
+      if (physics.tiltGravity === false || sensorBlocked()) return null;
+      const force = sensors.current?.read(physics.shakeThrow !== false, lastShake.current + SHAKE_INERTIA_PAUSE_MS);
+      return force ? scaleSensorGravity(force, physics) : null;
     };
 
     /** 当帧走位参数：走位驱动长期持有，每渲染就地更新，避免把尺寸与动画池闭包进旧实例。 */
@@ -209,25 +211,16 @@ export function createCardMotion(rt: CardMotionRuntime) {
       flight.start(px, py, vx, vy);
     };
 
-    /**
-     * 把速度落到这只宠物身上：在跑就按给定口径处理，没跑就从落点起飞。
-     *
-     * @param vx - 水平速度或冲量（px/s）。
-     * @param vy - 竖直速度或冲量（px/s）。
-     * @param mode - `set` = 结算后的绝对速度（碰撞）；`add` = 叠加冲量（摇一摇）。
-     */
-    const applyVelocity = (vx: number, vy: number, mode: 'set' | 'add'): void => {
+    /** 碰撞结算给的是绝对速度。未起飞时从当前渲染位置起步。 */
+    const applyVelocity = (vx: number, vy: number): void => {
       if (flight.isFlying()) {
-        if (mode === 'set') flight.setVelocity(vx, vy);
-        else flight.impulse(vx, vy);
+        flight.setVelocity(vx, vy);
         return;
       }
-      const at = root()?.getBoundingClientRect() ?? null;
-      if (at === null) return;
-      startThrow(at.x, at.y, vx, vy);
+      const at = root()?.getBoundingClientRect();
+      if (at) startThrow(at.x, at.y, vx, vy);
     };
-    /** 最新的 applyVelocity 引用，供碰撞槽与传感器回调转发，避免陈旧闭包。 */
-    const applyVelocityRef = useRef<(vx: number, vy: number, mode: 'set' | 'add') => void>(() => {});
+    const applyVelocityRef = useRef<(vx: number, vy: number) => void>(() => {});
     applyVelocityRef.current = applyVelocity;
 
     const sensorFrame = useRef<number | null>(null);
@@ -235,10 +228,13 @@ export function createCardMotion(rt: CardMotionRuntime) {
     const wakeSensorsRef = useRef<(() => void) | null>(null);
     wakeSensorsRef.current ??= () => {
       if (!sensorMounted.current) return;
-      if (!sensorGravity()) {
+      if (document.hidden || !sensors.current?.enabled) {
+        lastShake.current = -Infinity;
+        shakeArmed.current = true;
         flight.settleHeld();
         return;
       }
+      if (!sensorGravity()) return;
       if (sensorFrame.current !== null || flight.isFlying()) return;
       sensorFrame.current = requestAnimationFrame(() => {
         sensorFrame.current = null;
@@ -250,9 +246,21 @@ export function createCardMotion(rt: CardMotionRuntime) {
       sensorMounted.current = true;
       const unsubscribe = sensors.current?.subscribe((shake) => {
         const physics = cfgRef.current.physics;
-        if (shake && physics.shakeThrow !== false && physics.tiltGravity === false && !sensorBlocked()) {
-          const impulse = shakeImpulse(shake.x, shake.y, shake.z, physics.throwPower);
-          if (impulse) applyVelocityRef.current(impulse.vx, impulse.vy, 'add');
+        if (shake !== undefined) {
+          const kick = shake && physics.shakeThrow !== false ? shakeImpulse(shake, physics) : null;
+          // 只有新的运动读数回到阈值以下才重新待命。持续的一次加速只产生一个冲量。
+          if (!kick) shakeArmed.current = true;
+          const now = performance.now();
+          if (
+            kick &&
+            shakeArmed.current &&
+            now - lastShake.current >= SHAKE_COOLDOWN_MS &&
+            !sensorBlocked() &&
+            flight.shake(kick, stopMove)
+          ) {
+            lastShake.current = now;
+            shakeArmed.current = false;
+          }
         }
         wakeSensors();
       });
@@ -266,8 +274,8 @@ export function createCardMotion(rt: CardMotionRuntime) {
       // eslint-disable-next-line react-hooks/exhaustive-deps -- 回调只读稳定的 ref 与驱动。
     }, [sensors, flight, wakeSensors]);
 
-    const { shakeThrow, tiltGravity } = cfgRef.current.physics;
-    useEffect(wakeSensors, [wakeSensors, metrics.size, shakeThrow, tiltGravity]);
+    const { gravity, sensorSensitivity, shakeThrow, tiltGravity } = cfgRef.current.physics;
+    useEffect(wakeSensors, [wakeSensors, metrics.size, gravity, sensorSensitivity, shakeThrow, tiltGravity]);
 
     const resetPosition = (): void => {
       flight.stop();
@@ -331,7 +339,7 @@ export function createCardMotion(rt: CardMotionRuntime) {
         },
         getVel: () => flight.velocity(),
         applyVelocity: (vx, vy) => {
-          if (!sensorBlocked()) applyVelocityRef.current(vx, vy, 'set');
+          if (!sensorBlocked()) applyVelocityRef.current(vx, vy);
         },
       };
       return () => {

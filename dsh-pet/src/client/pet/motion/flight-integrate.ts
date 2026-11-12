@@ -12,6 +12,7 @@ import {
   type GravityVector,
   type ThrowState,
 } from '../../../shared/physics.ts';
+import { sensorPhysicsValue } from '../../../shared/physics/sensor-settings.ts';
 import type { PhysicsParams, Rect } from '../../../shared/types.ts';
 
 /** 一帧积分的产出：状态加两个标志。 */
@@ -93,7 +94,7 @@ export function integrateSensorFlight(
   };
   const count = Math.max(Math.ceil(dt * 120), throwSubsteps(current.vx, current.vy, dt));
   const stepDt = dt / count;
-  const damping = Math.exp(-0.35 * stepDt);
+  const damping = Math.exp(-sensorPhysicsValue(physics, 'sensorDamping') * stepDt);
   let result: FlightStep = { ...current, bounced: false, atRest: false, hit: null, contacts: [] };
   let hit: FlightStep['hit'] = null;
   for (let i = 0; i < count; i++) {
@@ -106,4 +107,26 @@ export function integrateSensorFlight(
   // 共享的普通抛掷判定只看碰撞速度；贴着墙时另一轴仍可能被体感推动。
   const atRest = Math.hypot(current.vx, current.vy) < 1 && !sensorCanMove(current, bounds, g);
   return { ...result, ...current, bounced: hit !== null, atRest, hit };
+}
+
+function kickAxis(position: number, min: number, max: number, velocity: number, kick: number, release: number): number {
+  if (min === max) return 0;
+  if (position <= min + 2) return Math.max(release, Math.abs(kick) + Math.max(0, velocity));
+  if (position >= max - 2) return -Math.max(release, Math.abs(kick) + Math.max(0, -velocity));
+  return velocity + kick;
+}
+
+/** 把贴边时的摇晃冲量导入可见区域，留出足够法向速度脱离接触面。 */
+export function sensorKickVelocity(
+  state: ThrowState,
+  bounds: FlightBounds,
+  kick: Pick<ThrowState, 'vx' | 'vy'>,
+  speedLimit: number,
+): Pick<ThrowState, 'vx' | 'vy'> {
+  const release = Math.min(550, Math.hypot(kick.vx, kick.vy) * 0.28);
+  const vx = kickAxis(state.x, bounds.minX, bounds.maxX, state.vx, kick.vx, release);
+  const vy = kickAxis(state.y, bounds.minY, bounds.maxY, state.vy, kick.vy, release);
+  const speed = Math.hypot(vx, vy);
+  const gain = speed > speedLimit ? speedLimit / speed : 1;
+  return { vx: vx * gain, vy: vy * gain };
 }

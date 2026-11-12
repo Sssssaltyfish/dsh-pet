@@ -6,6 +6,7 @@
  * @module dsh-pet/src/shared/physics/constants
  */
 import { type PhysicsParams } from '../types.ts';
+import { SENSOR_PHYSICS_SETTINGS } from './sensor-settings.ts';
 
 /** 拖拽弹簧刚度：越大跟手越紧。 */
 export const SPRING_K = 200;
@@ -64,6 +65,10 @@ export const DEFAULT_PHYSICS: PhysicsParams = {
   hapticEnabled: true,
   tiltGravity: true,
   shakeThrow: true,
+  sensorSensitivity: SENSOR_PHYSICS_SETTINGS.sensorSensitivity.defaultValue,
+  sensorDamping: SENSOR_PHYSICS_SETTINGS.sensorDamping.defaultValue,
+  shakeThreshold: SENSOR_PHYSICS_SETTINGS.shakeThreshold.defaultValue,
+  shakeStrength: SENSOR_PHYSICS_SETTINGS.shakeStrength.defaultValue,
 };
 
 /** 总力度默认量（throwPower=1 即现状）。 */

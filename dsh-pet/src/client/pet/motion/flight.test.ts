@@ -357,4 +357,66 @@ describe('createFlight —— 体感飞行', () => {
       frames.restore();
     }
   });
+  test('停在地面时，剧烈横向摇晃让宠物向上离地，即使关闭倾斜', () => {
+    const frames = withFakeFrames();
+    try {
+      const { flight, box, root } = harness();
+      const ground = viewport.height - metrics.halfH * 2;
+      root.getBoundingClientRect = () => ({ x: 400, y: ground, left: 400, top: ground }) as DOMRect;
+      assert.equal(
+        flight.shake({ vx: 2500, vy: 500 }, () => {}),
+        true,
+      );
+      assert.ok(flight.velocity().vy <= -500);
+      for (let i = 0; i < 10; i++) frames.tick(16);
+      assert.ok(box() && box()!.y < ground - 40);
+    } finally {
+      frames.restore();
+    }
+  });
+
+  test('摇晃让贴在右上角的宠物向场内飞，且飞行期间可以再加上冲量', () => {
+    const frames = withFakeFrames();
+    try {
+      const { flight, root, box } = harness({ gravity: () => ({ gx: 800, gy: -800 }) });
+      const right = viewport.width - metrics.size + metrics.sideAllow;
+      root.getBoundingClientRect = () => ({ x: right, y: 0, left: right, top: 0 }) as DOMRect;
+      assert.equal(
+        flight.shake({ vx: 600, vy: -900 }, () => {}),
+        true,
+      );
+      frames.tick(16);
+      assert.ok(box() && box()!.x < right && box()!.y > 0);
+      const before = flight.velocity().vy;
+      assert.equal(
+        flight.shake({ vx: 0, vy: 700 }, () => assert.fail('不应重新起飞')),
+        true,
+      );
+      assert.ok(flight.velocity().vy > before);
+    } finally {
+      frames.restore();
+    }
+  });
+
+  test('提高体感阻尼让同样的冲量更快慢下来', () => {
+    const frames = withFakeFrames();
+    try {
+      const run = (sensorDamping: number) => {
+        const { flight } = harness({ physics: { ...DEFAULT_PHYSICS, gravity: 0, sensorDamping } });
+        assert.equal(
+          flight.shake({ vx: 500, vy: 0 }, () => {}),
+          true,
+        );
+        for (let i = 0; i < 10; i++) frames.tick(16);
+        const speed = flight.velocity().vx;
+        flight.stop();
+        return speed;
+      };
+      assert.equal(run(0), 500);
+      assert.ok(run(2) < 375);
+      assert.ok(run(8) < 175);
+    } finally {
+      frames.restore();
+    }
+  });
 });

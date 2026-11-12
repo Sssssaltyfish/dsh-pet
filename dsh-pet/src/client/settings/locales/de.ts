@@ -195,15 +195,26 @@ export const de: Record<Key, string> = {
   physicsCeilingBounceHint: 'Aus: Würfe können oben aus dem Bildschirm fliegen (die Schwerkraft holt sie zurück)',
   physicsPetCollision: 'Pet-Kollisionen',
   physicsPetCollisionHint: 'Ein fliegendes Pet prallt mit Impulserhaltung von anderen ab (Masse ∝ Größe²)',
+  'physics.sensorSensitivity': 'Bewegungsempfindlichkeit',
+  'physics.sensorSensitivityHint': 'Faktor für Neigung und Trägheit; höhere Werte reagieren empfindlicher.',
+  'physics.sensorDamping': 'Bewegungsdämpfung',
+  'physics.sensorDampingHint':
+    'Geschwindigkeitsabnahme pro Sekunde; höhere Werte beruhigen den Pet nach dem Schütteln schneller.',
+  'physics.shakeThreshold': 'Schüttelschwelle',
+  'physics.shakeThresholdHint':
+    'Beschleunigung ohne Schwerkraft in m/s²; niedrigere Werte lösen leichter einen Wurf aus.',
+  'physics.shakeStrength': 'Schüttelstärke',
+  'physics.shakeStrengthHint': 'Faktor für die Abwurfgeschwindigkeit beim Schütteln; wirkt zusätzlich zur Wurfkraft.',
+  invalidSensorPhysics: 'Bewegungswerte prüfen: Empfindlichkeit / Stärke 0.25–4, Dämpfung 0–8, Schwelle 4–30.',
   physicsHaptic: 'Kollisions-Vibration',
   physicsHapticHint:
     'Ein Impuls pro Treffer (Wand, Boden, Decke, andere Pets). Funktioniert in Chrome/Edge; nicht auf iOS oder in WebView-Hüllen wie Via. „Nicht stören“ blockiert die Vibration.',
   physicsTilt: 'Schwerkraft per Neigung',
   physicsTiltHint:
-    'Handy neigen: die Schwerkraft folgt der Neigung (Betrag = der Wert oben). Bei Schwerkraft 0 bewirkt Neigen nichts. Benötigt HTTPS/localhost.',
+    'Durch Neigen des Handys ändert sich die Richtung der Schwerkraft. Ihre Stärke hängt von der eingestellten Schwerkraft und der Bewegungsempfindlichkeit ab.',
   physicsShake: 'Schütteln zum Werfen',
   physicsShakeHint:
-    'Schütteln schleudert den Pet in Wurfrichtung; die Stärke folgt throwPower. Unabhängig von der Schwerkraft, funktioniert also auch bei 0. Benötigt HTTPS/localhost.',
+    'Kräftiges Schütteln schleudert das Haustier. Eine Bewegung senkrecht zum Bildschirm lässt es nach oben springen.',
   invalidPhysics: 'Bitte Physikwerte prüfen: Schwerkraft / Bodenreibung ≥ 0, Elastizität 0–1, Wurfkraft > 0.',
   fontTitle: 'Aussehen & Schrift',
   fontHint:

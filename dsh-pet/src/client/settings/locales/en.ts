@@ -195,15 +195,23 @@ export const en: Record<Key, string> = {
     'Turn this off to let a throw fly out through the top of the screen (gravity still pulls it back)',
   physicsPetCollision: 'Pet collisions',
   physicsPetCollisionHint: 'A flying pet bounces off the others with momentum conservation (mass ∝ size²)',
+  'physics.sensorSensitivity': 'Motion sensitivity',
+  'physics.sensorSensitivityHint': 'Tilt and inertia multiplier; higher values make the pet respond more readily.',
+  'physics.sensorDamping': 'Motion damping',
+  'physics.sensorDampingHint': 'Velocity decay per second; higher values settle the pet sooner after shaking stops.',
+  'physics.shakeThreshold': 'Shake threshold',
+  'physics.shakeThresholdHint': 'm/s² of acceleration without gravity; lower values trigger a throw more easily.',
+  'physics.shakeStrength': 'Shake strength',
+  'physics.shakeStrengthHint': 'Shake launch speed multiplier; combines with throw power.',
+  invalidSensorPhysics: 'Check motion values: sensitivity / strength 0.25–4, damping 0–8, threshold 4–30.',
   physicsHaptic: 'Collision haptics',
   physicsHapticHint:
     'One buzz per hit (walls, floor, ceiling, other pets). Works in Chrome/Edge; not on iOS or WebView shells like Via. Do Not Disturb blocks it.',
   physicsTilt: 'Tilt gravity',
   physicsTiltHint:
-    'Tilt the phone and gravity follows it (magnitude = the gravity value above); with gravity at 0 tilt has no effect. Requires HTTPS/localhost.',
+    'Tilt the phone to change the direction of gravity. Its strength depends on the gravity and motion sensitivity settings.',
   physicsShake: 'Shake to throw',
-  physicsShakeHint:
-    'Shake to fling the pet along the shake direction; strength scales with throwPower. Independent of gravity, so it still works at gravity 0. Requires HTTPS/localhost.',
+  physicsShakeHint: 'Shake firmly to throw the pet. A shake perpendicular to the screen makes it hop upward.',
   invalidPhysics: 'Check the physics values: gravity / ground friction ≥ 0, bounciness 0–1, throw power > 0.',
   fontTitle: 'Appearance & font',
   fontHint:

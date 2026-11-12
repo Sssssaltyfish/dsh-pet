@@ -196,15 +196,26 @@ export const pt: Record<Key, string> = {
     'Desligado, o arremesso pode sair pelo topo da tela (a gravidade ainda traz o pet de volta)',
   physicsPetCollision: 'Colisão entre pets',
   physicsPetCollisionHint: 'Um pet em voo quica nos outros com conservação de momento (massa ∝ tamanho²)',
+  'physics.sensorSensitivity': 'Sensibilidade ao movimento',
+  'physics.sensorSensitivityHint':
+    'Multiplicador de inclinação e inércia; valores maiores tornam a resposta mais sensível.',
+  'physics.sensorDamping': 'Amortecimento',
+  'physics.sensorDampingHint':
+    'Redução da velocidade por segundo; valores maiores estabilizam o pet mais rápido após a sacudida.',
+  'physics.shakeThreshold': 'Limiar de sacudida',
+  'physics.shakeThresholdHint': 'Aceleração sem gravidade em m/s²; valores menores facilitam o arremesso.',
+  'physics.shakeStrength': 'Força da sacudida',
+  'physics.shakeStrengthHint': 'Multiplicador da velocidade ao sacudir; combina com a força de arremesso.',
+  invalidSensorPhysics: 'Confira o movimento: sensibilidade / força 0.25–4, amortecimento 0–8, limiar 4–30.',
   physicsHaptic: 'Vibração ao colidir',
   physicsHapticHint:
     'Uma vibração por impacto (paredes, chão, teto, outros pets). Funciona no Chrome/Edge; não no iOS nem em navegadores WebView como o Via. O modo Não perturbe bloqueia o vibrador.',
   physicsTilt: 'Gravidade por inclinação',
   physicsTiltHint:
-    'Incline o celular e a gravidade acompanha (magnitude = o valor acima); com gravidade em 0 a inclinação não faz nada. Requer HTTPS/localhost.',
+    'Incline o celular para mudar a direção da gravidade. A força depende da gravidade e da sensibilidade ao movimento.',
   physicsShake: 'Sacudir para arremessar',
   physicsShakeHint:
-    'Sacuda para arremessar o pet na direção do gesto; a força acompanha o throwPower. Independe da gravidade, então funciona com gravidade 0. Requer HTTPS/localhost.',
+    'Sacuda o celular com força para arremessar o pet. Sacudir na direção perpendicular à tela faz o pet saltar para cima.',
   invalidPhysics:
     'Revise os valores de física: gravidade / atrito com o chão ≥ 0, restituição 0–1, força de arremesso > 0.',
   fontTitle: 'Aparência e fonte',

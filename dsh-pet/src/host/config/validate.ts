@@ -6,6 +6,7 @@
  * @module dsh-pet/src/host/config/validate
  */
 import { FONT_SIZE_MAX, FONT_SIZE_MIN } from '../../shared/fonts.ts';
+import { sensorPhysicsValid } from '../../shared/physics/sensor-settings.ts';
 import { isKnownVoice } from '../voice/voices.ts';
 import { FONT_FAMILY_SET } from './constants.ts';
 
@@ -122,7 +123,8 @@ export function physicsValid(value: unknown): boolean {
     // 缺键不算整段非法。
     (p.hapticEnabled === undefined || typeof p.hapticEnabled === 'boolean') &&
     (p.tiltGravity === undefined || typeof p.tiltGravity === 'boolean') &&
-    (p.shakeThrow === undefined || typeof p.shakeThrow === 'boolean')
+    (p.shakeThrow === undefined || typeof p.shakeThrow === 'boolean') &&
+    sensorPhysicsValid(p)
   );
 }
 

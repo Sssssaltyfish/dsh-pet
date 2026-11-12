@@ -175,13 +175,18 @@ export interface PhysicsParams {
   throwPower: number;
   /** 多宠物互相碰撞开关：true（默认）= 飞行中的宠物撞到其它宠物时按动量守恒弹开；false = 互相穿过 */
   petCollision: boolean;
-  /** 倾斜控制重力：true（默认）= 手机倾斜方向代替固定向下的重力方向（大小仍由 gravity 决定，竖直时取满值；
-   *  gravity 为 0 时倾斜没有可用的量，等同关闭）；false = 重力恒竖直向下。
-   *  仅浏览器半侧生效，且传感器只在安全上下文（HTTPS / localhost）可用；缺键按 true。 */
+  /** 体感开启后用设备姿态决定重力方向（默认开启）。强度由 gravity 与 sensorSensitivity 决定。 */
   tiltGravity?: boolean;
-  /** 摇一摇抛出：true（默认）= 摇一摇沿甩动方向把宠物甩出去（力度 = 基准 × throwPower），与重力大小无关，
-   *  所以 gravity 为 0 时也能用；false = 不读加速度计。同样只在安全上下文可用。缺键按 true。 */
+  /** 摇一摇抛出（默认开启）。冲量独立于重力。false 时只处理倾斜重力。 */
   shakeThrow?: boolean;
+  /** 连续体感力的增益倍率，0.25–4，默认 1.6。 */
+  sensorSensitivity?: number;
+  /** 体感飞行的速度衰减率（/s），0–8，默认 2。 */
+  sensorDamping?: number;
+  /** 触发一次摇晃冲量的加速度阈值（m/s²），4–30，默认 10。 */
+  shakeThreshold?: number;
+  /** 摇晃冲量的增益倍率，0.25–4，默认 1.2。 */
+  shakeStrength?: number;
   /** 碰撞触觉反馈：true（默认）时撞墙 / 落地 / 撞顶与宠物互撞各震一下。
    *  仅浏览器半侧生效，且要求环境有 Vibration API——iOS 与桌面端没有，静默跳过。
    *  缺省按 true；旧配置里没有这个键也算开。 */
