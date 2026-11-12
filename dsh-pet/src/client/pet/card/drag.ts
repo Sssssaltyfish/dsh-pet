@@ -95,6 +95,7 @@ export function createCardDrag(rt: CardDragRuntime) {
         root,
         box: () => motion.box(),
         setBox: (box) => motion.setBox(box),
+        onSettled: motion.wakeSensors,
         commitPlace: (box) => {
           const metrics = motion.metrics();
           const viewport = { width: window.innerWidth, height: window.innerHeight };

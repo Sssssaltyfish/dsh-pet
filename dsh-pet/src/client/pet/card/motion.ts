@@ -6,7 +6,8 @@
  */
 import { createFlight, type Flight, type FlightMetrics } from '../motion/flight.ts';
 import { createHaptics, type Haptics } from '../haptics.ts';
-import { canReadMotionSensors, shakeImpulse, subscribeShake, subscribeTilt, tiltGravity } from '../device-tilt.ts';
+import { shakeImpulse } from '../device-tilt.ts';
+import type { DevicePhysics } from '../device-physics.ts';
 import { createPositionFollow, type PositionFollow } from '../motion/position-follow.ts';
 import { createSquashDriver, type SquashDriver } from '../motion/squash.ts';
 import { createWalk, type Walk } from '../motion/walk.ts';
@@ -14,7 +15,7 @@ import { landingSquash, throwVelocity } from '../../../shared/physics.ts';
 import type { CardLive } from './live.ts';
 import type { CardStateApi } from './state.ts';
 import type { MovesConfig } from '../../../shared/types.ts';
-import type { PetCollisionSlot } from '../../../shared/physics.ts';
+import type { GravityVector, PetCollisionSlot } from '../../../shared/physics.ts';
 import type { RuntimePet } from '../types.ts';
 import type * as ReactNS from 'react';
 
@@ -34,6 +35,8 @@ export interface CardMotionInput {
   cfgRef: ReactNS.MutableRefObject<RuntimePet>;
   /** 宠物间碰撞站场。 */
   arena: ReactNS.MutableRefObject<{ slots: Record<string, PetCollisionSlot> }>;
+  /** 页面体感读数与订阅。 */
+  sensors: ReactNS.MutableRefObject<DevicePhysics | null>;
   /** 装配根迟绑槽。 */
   live: ReactNS.MutableRefObject<CardLive>;
   /** 当帧几何（配置尺寸推出来）。 */
@@ -68,8 +71,12 @@ export interface CardMotion {
   startThrow: (px: number, py: number, vx: number, vy: number) => void;
   /** 抛掷指令：角度（度）与力度倍率。 */
   applyThrow: (angleDeg: number, power: number) => void;
-  /** 自主走位。 */
-  walk: Walk;
+  /** 按当前体感状态决定是否尝试自主走位。 */
+  tryWalk: Walk['tryMove'];
+  /** 下一帧从已渲染位置恢复体感运动。 */
+  wakeSensors: () => void;
+  /** 清除自定义位置及运动驱动直接写入的定位。 */
+  resetPosition: () => void;
   /** 抛掷飞行。 */
   flight: Flight;
   /** 位置跟随。 */
@@ -88,7 +95,14 @@ export function createCardMotion(rt: CardMotionRuntime) {
   const { useEffect, useRef } = rt;
 
   return function useCardMotion(input: CardMotionInput): CardMotion {
-    const { arena, card, cfgRef, live, metrics, moves, petId, root, setAnim, setOnce, setCustomPos } = input;
+    const { arena, card, cfgRef, live, metrics, moves, petId, root, sensors, setAnim, setOnce, setCustomPos } = input;
+    const sensorBlocked = (): boolean => live.current.drag.isActive() || live.current.sensorBlocked();
+    const sensorGravity = (): GravityVector | null => {
+      const { gravity, tiltGravity, shakeThrow } = cfgRef.current.physics;
+      if (tiltGravity === false || sensorBlocked()) return null;
+      const force = sensors.current?.read(shakeThrow !== false);
+      return force ? { gx: force.x * gravity, gy: force.y * gravity } : null;
+    };
 
     /** 当帧走位参数：走位驱动长期持有，每渲染就地更新，避免把尺寸与动画池闭包进旧实例。 */
     const motionRef = useRef<FlightMetrics>(metrics);
@@ -160,7 +174,6 @@ export function createCardMotion(rt: CardMotionRuntime) {
       physics: () => cfgRef.current.physics,
       arena: () => arena.current,
       petId,
-      box: () => boxRef.current,
       setBox: (box) => {
         boxRef.current = box;
       },
@@ -176,22 +189,18 @@ export function createCardMotion(rt: CardMotionRuntime) {
       onImpact: (impact) => {
         haptics.hit(impact.kind, impact.speed);
       },
-      // 只在常驻（倾斜）模式被读：倾斜没开或还没有采样时退回竖直重力，行为与关掉体感一致。
-      gravity: () => {
-        const physics = cfgRef.current.physics;
-        const gravity = physics?.gravity ?? 0;
-        if (physics?.tiltGravity !== true) return { gx: 0, gy: gravity };
-        const sample = tiltSampleRef.current;
-        const baseline = tiltBaselineRef.current;
-        if (sample === null || baseline === null) return { gx: 0, gy: gravity };
-        return tiltGravity(sample, baseline, gravity);
+      gravity: sensorGravity,
+      sensorViewport: () => {
+        const viewport = window.visualViewport;
+        return {
+          x: viewport?.offsetLeft ?? 0,
+          y: viewport?.offsetTop ?? 0,
+          width: viewport?.width ?? window.innerWidth,
+          height: viewport?.height ?? window.innerHeight,
+        };
       },
     });
     const flight = flightRef.current;
-
-    /** 体感：采样与中性姿态；关掉倾斜时两个都清空，下次再开重新标定。 */
-    const tiltSampleRef = useRef<{ beta: number; gamma: number } | null>(null);
-    const tiltBaselineRef = useRef<{ beta: number; gamma: number } | null>(null);
 
     /** 从给定左上角与初速起飞；先停弹簧跟随与走位，免得两套运动同时改位置。 */
     const startThrow = (px: number, py: number, vx: number, vy: number): void => {
@@ -203,9 +212,6 @@ export function createCardMotion(rt: CardMotionRuntime) {
     /**
      * 把速度落到这只宠物身上：在跑就按给定口径处理，没跑就从落点起飞。
      *
-     * 没跑时一律起抛掷而不是起常驻——常驻只在倾斜开关开着时由姿态采样拉起，
-     * 否则重力非零时会留下一个永远停不下来的常驻循环。
-     *
      * @param vx - 水平速度或冲量（px/s）。
      * @param vy - 竖直速度或冲量（px/s）。
      * @param mode - `set` = 结算后的绝对速度（碰撞）；`add` = 叠加冲量（摇一摇）。
@@ -216,7 +222,7 @@ export function createCardMotion(rt: CardMotionRuntime) {
         else flight.impulse(vx, vy);
         return;
       }
-      const at = boxRef.current ?? root()?.getBoundingClientRect() ?? null;
+      const at = root()?.getBoundingClientRect() ?? null;
       if (at === null) return;
       startThrow(at.x, at.y, vx, vy);
     };
@@ -224,43 +230,58 @@ export function createCardMotion(rt: CardMotionRuntime) {
     const applyVelocityRef = useRef<(vx: number, vy: number, mode: 'set' | 'add') => void>(() => {});
     applyVelocityRef.current = applyVelocity;
 
-    // 传感器订阅只建一次：两个开关与物理参数每次回调现读，避免重订阅。
-    useEffect(() => {
-      if (!canReadMotionSensors()) return;
-      const offTilt = subscribeTilt((sample) => {
-        if (cfgRef.current.physics?.tiltGravity !== true) {
-          tiltSampleRef.current = null;
-          tiltBaselineRef.current = null;
-          // 关掉开关时立刻收手：常驻模式若还在跑，会继续按朝下的重力往下掉。
-          // 只停常驻——无条件 stop 会把正在飞的抛掷一起按掉，而传感器采样是持续不断的。
-          if (flight.isHeld()) flight.stop();
-          return;
-        }
-        if (tiltBaselineRef.current === null) tiltBaselineRef.current = sample;
-        tiltSampleRef.current = sample;
-        if (live.current.drag.isActive() || flight.isFlying()) return;
-        // 只有真的倾斜了才起步：平放时每帧都起/停会长跑一个停不下来的空循环。
-        const gravity = cfgRef.current.physics?.gravity ?? 0;
-        const vector = tiltGravity(sample, tiltBaselineRef.current, gravity);
-        if (vector.gx === 0 && vector.gy === 0) return;
-        // 起步前先让走位与跟随松手：两套驱动同时写 left/top 会抖，互撞读的盒子也会被写乱。
-        stopMove();
-        flight.startHeld();
+    const sensorFrame = useRef<number | null>(null);
+    const sensorMounted = useRef(false);
+    const wakeSensorsRef = useRef<(() => void) | null>(null);
+    wakeSensorsRef.current ??= () => {
+      if (!sensorMounted.current) return;
+      if (!sensorGravity()) {
+        flight.settleHeld();
+        return;
+      }
+      if (sensorFrame.current !== null || flight.isFlying()) return;
+      sensorFrame.current = requestAnimationFrame(() => {
+        sensorFrame.current = null;
+        flight.startHeld(stopMove);
       });
-      const offShake = subscribeShake((ax, ay, az) => {
+    };
+    const wakeSensors = wakeSensorsRef.current;
+    useEffect(() => {
+      sensorMounted.current = true;
+      const unsubscribe = sensors.current?.subscribe((shake) => {
         const physics = cfgRef.current.physics;
-        if (physics?.shakeThrow !== true) return;
-        if (live.current.drag.isActive()) return;
-        const impulse = shakeImpulse(ax, ay, az, physics.throwPower ?? 1);
-        if (impulse !== null) applyVelocityRef.current(impulse.vx, impulse.vy, 'add');
+        if (shake && physics.shakeThrow !== false && physics.tiltGravity === false && !sensorBlocked()) {
+          const impulse = shakeImpulse(shake.x, shake.y, shake.z, physics.throwPower);
+          if (impulse) applyVelocityRef.current(impulse.vx, impulse.vy, 'add');
+        }
+        wakeSensors();
       });
       return () => {
-        offTilt();
-        offShake();
+        sensorMounted.current = false;
+        unsubscribe?.();
+        if (sensorFrame.current !== null) cancelAnimationFrame(sensorFrame.current);
+        sensorFrame.current = null;
         flight.stop();
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- 订阅只建一次；开关、物理参数与驱动实例都经 ref 现读
-    }, []);
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- 回调只读稳定的 ref 与驱动。
+    }, [sensors, flight, wakeSensors]);
+
+    const { shakeThrow, tiltGravity } = cfgRef.current.physics;
+    useEffect(wakeSensors, [wakeSensors, metrics.size, shakeThrow, tiltGravity]);
+
+    const resetPosition = (): void => {
+      flight.stop();
+      stopMove();
+      boxRef.current = null;
+      card.customPosRef.current = null;
+      // 运动直接写 DOM；React 状态原本就是 null 时不会清除这些内联样式。
+      const el = root();
+      if (el) {
+        for (const edge of ['left', 'top', 'right', 'bottom'] as const) el.style.removeProperty(edge);
+      }
+      setCustomPos(null);
+      wakeSensors();
+    };
 
     const posFollowRef = useRef<PositionFollow | null>(null);
     posFollowRef.current ??= createPositionFollow({
@@ -304,12 +325,14 @@ export function createCardMotion(rt: CardMotionRuntime) {
         size,
         bottomPad,
         getBox: () => {
-          if (boxRef.current) return boxRef.current;
+          if (boxRef.current && flight.isFlying()) return boxRef.current;
           const r = root()?.getBoundingClientRect();
           return r ? { x: r.left, y: r.top } : null;
         },
         getVel: () => flight.velocity(),
-        applyVelocity: (vx, vy) => applyVelocityRef.current(vx, vy, 'set'),
+        applyVelocity: (vx, vy) => {
+          if (!sensorBlocked()) applyVelocityRef.current(vx, vy, 'set');
+        },
       };
       return () => {
         delete arenaSlots[petId];
@@ -333,13 +356,15 @@ export function createCardMotion(rt: CardMotionRuntime) {
       flight,
       metrics: () => motionRef.current,
       posFollow,
+      resetPosition,
       setBox: (box) => {
         boxRef.current = box;
       },
       squash,
       startThrow,
       stopMove,
-      walk,
+      tryWalk: (preferredName) => (sensorGravity() ? false : walk.tryMove(preferredName)),
+      wakeSensors,
     };
   };
 }

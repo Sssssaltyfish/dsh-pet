@@ -11,6 +11,7 @@ import type { LockState, PositionMode, SayCue, PetFacing, SleepState, EnvState }
 import type { MenuMoreItem } from '../../../shared/menu.ts';
 import type { WorkStatusSnapshot } from '../../../shared/work-status.ts';
 import type { RuntimePet } from '../types.ts';
+import type { DevicePhysics } from '../device-physics.ts';
 
 /** 一张宠物卡的渲染输入。 */
 export interface PetCardProps {
@@ -64,4 +65,6 @@ export interface PetCardProps {
   menuItemsRef: ReactNS.MutableRefObject<MenuMoreItem[]>;
   /** 宠物间碰撞站场。 */
   arena: ReactNS.MutableRefObject<{ slots: Record<string, PetCollisionSlot> }>;
+  /** 同页宠物共用的体感控制器。 */
+  sensors: ReactNS.MutableRefObject<DevicePhysics | null>;
 }

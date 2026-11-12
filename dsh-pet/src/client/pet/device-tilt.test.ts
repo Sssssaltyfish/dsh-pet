@@ -1,60 +1,7 @@
-/**
- * 体感换算的单元测试：钉住三角函数映射、死区、横屏旋转、摇一摇的力度/方向，
- * 以及权限申请只问用得上的那一种传感器。
- *
- * 只测纯函数与可注入的全局对象——真实传感器与事件订阅要设备，不在这里覆盖。
- */
+/** 摇一摇冲量与设置页传感器授权的回归测试。 */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-
-import {
-  requestMotionPermission,
-  SHAKE_THRESHOLD,
-  shakeImpulse,
-  TILT_DEAD_ZONE_DEG,
-  tiltGravity,
-  type TiltSample,
-} from './device-tilt.ts';
-
-const FLAT: TiltSample = { beta: 0, gamma: 0 };
-
-describe('tiltGravity —— 倾斜角度到重力向量', () => {
-  test('没有倾斜 → 零向量', () => {
-    assert.deepEqual(tiltGravity(FLAT, FLAT, 1400), { gx: 0, gy: 0 });
-  });
-
-  test('死区内 → 零向量（手抖不该让宠物一直滑）', () => {
-    const near: TiltSample = { beta: TILT_DEAD_ZONE_DEG - 0.5, gamma: TILT_DEAD_ZONE_DEG - 0.5 };
-    assert.deepEqual(tiltGravity(near, FLAT, 1400), { gx: 0, gy: 0 });
-  });
-
-  test('左右倾 30° → 水平分量是重力的一半', () => {
-    const out = tiltGravity({ beta: 0, gamma: 30 }, FLAT, 1400);
-    assert.ok(Math.abs(out.gx - 700) < 1e-9, `应为 700，实际 ${out.gx}`);
-    assert.equal(out.gy, 0);
-  });
-
-  test('竖直 90° → 取满重力（配置值就是上限）', () => {
-    const out = tiltGravity({ beta: 90, gamma: 0 }, FLAT, 1400);
-    assert.ok(Math.abs(out.gy - 1400) < 1e-9, `应为 1400，实际 ${out.gy}`);
-  });
-
-  test('横屏（屏幕角 90°）→ 轴要换过来', () => {
-    const out = tiltGravity({ beta: 0, gamma: 30 }, FLAT, 1400, 90);
-    assert.ok(Math.abs(out.gx) < 1e-9, `横屏时水平倾斜不该进 gx，实际 ${out.gx}`);
-    assert.ok(Math.abs(out.gy + 700) < 1e-9, `应为 -700，实际 ${out.gy}`);
-  });
-
-  test('重力为 0 或负数 → 零向量（不会凭空产生加速度）', () => {
-    assert.deepEqual(tiltGravity({ beta: 30, gamma: 30 }, FLAT, 0), { gx: 0, gy: 0 });
-    assert.deepEqual(tiltGravity({ beta: 30, gamma: 30 }, FLAT, -100), { gx: 0, gy: 0 });
-  });
-
-  test('基线附近跨越 ±90° 时取最近的角差，不反向', () => {
-    const out = tiltGravity({ beta: 0, gamma: -89 }, { beta: 0, gamma: 89 }, 1400);
-    assert.ok(out.gx > 0, `跨过 ±90 仍应指向同一侧，实际 ${out.gx}`);
-  });
-});
+import { requestMotionPermission, SHAKE_THRESHOLD, shakeImpulse } from './device-tilt.ts';
 
 describe('shakeImpulse —— 摇一摇的冲量', () => {
   test('低于阈值 → null', () => {

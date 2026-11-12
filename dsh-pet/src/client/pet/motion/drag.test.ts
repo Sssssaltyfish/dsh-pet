@@ -30,14 +30,19 @@ function fakeEl() {
 
 /** 造一个指针事件；只需要处理器读到的字段。 */
 function pointer(el: ReturnType<typeof fakeEl>, x: number, y: number, button = 0, pointerType = 'mouse') {
-  return {
+  const event = {
     button,
     pointerId: 1,
     pointerType,
     clientX: x,
     clientY: y,
+    defaultPrevented: false,
+    preventDefault() {
+      event.defaultPrevented = true;
+    },
     currentTarget: el as unknown as HTMLDivElement,
-  } as unknown as React.PointerEvent<HTMLDivElement>;
+  };
+  return event as unknown as React.PointerEvent<HTMLDivElement>;
 }
 
 /** 假 window：只收 mouseup 监听，用来模拟指针捕获丢失后唯一到达的那次松开。 */
@@ -417,10 +422,15 @@ describe('createDrag —— 按压已结束时松手', () => {
     const mouseEvent = withFakeMouseEvent();
     try {
       const { drag, el, calls } = harness();
-      drag.onPointerDown(pointer(el, 500, 350, 0, 'touch'));
+      const down = pointer(el, 500, 350, 0, 'touch');
+      drag.onPointerDown(down);
+      assert.equal(down.defaultPrevented, true, '触摸松手时不应补发鼠标按下');
       assert.equal(el.hasClass('dragging'), true, '按下时应该带上拖拽类');
       t.mock.timers.tick(500); // 长按到点：菜单接管，本次按压结束
+      assert.equal(drag.longPressed(), true);
       drag.onPointerUp(pointer(el, 500, 350, 0, 'touch'));
+      drag.onClick();
+      assert.equal(calls.clicks, 0, '长按后不应触发点击响应');
       assert.equal(el.hasClass('dragging'), false, '松手应该摘掉拖拽类');
       assert.deepEqual(calls.places, [], '按压已被菜单结束，不该原地放下');
       assert.deepEqual(calls.flights, [], '按压已被菜单结束，不该抛掷');

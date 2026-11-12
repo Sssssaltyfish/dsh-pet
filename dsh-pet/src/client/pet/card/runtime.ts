@@ -115,15 +115,6 @@ export function createCardRuntime(rt: PetRuntime) {
       // eslint-disable-next-line react-hooks/exhaustive-deps -- setter 稳定，变化原因只有配置的两个尺寸字段
     }, [cfg.size, cfg.sizePercent]);
 
-    useEffect(() => {
-      actions.setCorner(cfg.position.corner);
-      actions.setMargin({ x: cfg.position.marginX, y: cfg.position.marginY });
-      // 改位置是明确的「放这里」：清掉会话内的拖拽位置，让配置重新生效——
-      // 这也是设置页把跑出视口的宠物叫回来的通道。只调大小不在此列，不该丢位置。
-      actions.setCustomPos(null);
-      // eslint-disable-next-line react-hooks/exhaustive-deps -- setter 稳定，变化原因只有这三个位置字段
-    }, [cfg.position.corner, cfg.position.marginX, cfg.position.marginY]);
-
     // 四种气泡的单槽：显隐、停留计时与优先级都在 bubble-slots，这里只喂视图输入。
     const bubbles = useBubbleSlots({
       assetRoot: cfg.assetRoot,
@@ -157,6 +148,7 @@ export function createCardRuntime(rt: PetRuntime) {
       cfgRef,
       live: liveRef,
       metrics: { bottomPad, halfH, halfW, sideAllow, size },
+      sensors: props.sensors,
       moves: petAnims.moves,
       petId: cfg.id,
       root: () => rootRef.current,
@@ -164,6 +156,15 @@ export function createCardRuntime(rt: PetRuntime) {
       setCustomPos: actions.setCustomPos,
       setOnce: actions.setOnce,
     });
+
+    useEffect(() => {
+      actions.setCorner(cfg.position.corner);
+      actions.setMargin({ x: cfg.position.marginX, y: cfg.position.marginY });
+      // 改位置是明确的「放这里」：清掉会话内的拖拽位置，让配置重新生效——
+      // 这也是设置页把跑出视口的宠物叫回来的通道。只调大小不在此列，不该丢位置。
+      motion.resetPosition();
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- 配置位置变化才清除会话位置
+    }, [cfg.position.corner, cfg.position.marginX, cfg.position.marginY]);
 
     const drag = useCardDrag({
       bumpSeq: actions.bumpSeq,
@@ -187,6 +188,7 @@ export function createCardRuntime(rt: PetRuntime) {
       live: liveRef,
       menuItemsRef,
       motion,
+      sensors: props.sensors,
       runMenuAction: (leaf, playbackId, keepFacing) => menuActionsRef.current?.run(leaf, playbackId, keepFacing),
       showTodo: bubbles.showTodo,
       stage: () => stageRef.current,
@@ -210,7 +212,7 @@ export function createCardRuntime(rt: PetRuntime) {
         actions.setCuePlayback(playbackId);
       },
       report: reportPlayback,
-      resetPosition: () => actions.setCustomPos(null),
+      resetPosition: motion.resetPosition,
       // 睡觉：菜单在点击那一刻就要能拒绝（对话弹窗、待办面板、动作点播都是纯前端行为，宿主拦不到）
       say: (text) => liveRef.current.flow?.speak(text, undefined, undefined, undefined, false),
       locked: () => ownAnim.isFrozen(),
@@ -218,7 +220,7 @@ export function createCardRuntime(rt: PetRuntime) {
       sleeping: () => liveRef.current.flow?.sleeping() ?? false,
       stopMove: motion.stopMove,
       stopThrow: () => motion.flight.stop(),
-      tryMove: motion.walk.tryMove,
+      tryMove: motion.tryWalk,
       warn: (message) => console.warn(message),
     });
     const menuActions = menuActionsRef.current;
@@ -269,7 +271,7 @@ export function createCardRuntime(rt: PetRuntime) {
       // 占用锁：锁的语义是把控制权交给第三方，睡觉的菜单闸门与自动化闸门都对持锁者让路
       locked: () => ownAnim.isFrozen(),
       stopMotion: motion.stopMove,
-      tryWalk: motion.walk.tryMove,
+      tryWalk: motion.tryWalk,
     };
     // 七条指令的分派在 cue-effects：这里只把当拍 props 交过去。
     useCueEffects(hub, props);
@@ -303,7 +305,7 @@ export function createCardRuntime(rt: PetRuntime) {
       onClick: () => {
         // 拖拽守卫必须在睡觉分支之前：指针捕获后浏览器一定会在松手时补发一次 click，
         // 它不是点击（拖了多久都一样）。醒着时这条由 drag.onClick 内部判，睡觉分支绕过了那里。
-        if (drag.justDragged() || drag.isActive()) return;
+        if (drag.justDragged() || drag.isActive() || drag.longPressed()) return;
         const phase = liveRef.current.flow?.sleepPhase() ?? null;
         // 真睡着（循环中或醒来过渡）：点一下 = 叫醒。挤压与音效照常，
         // 但不播点击回应动画——这一下的产物是「起来」。

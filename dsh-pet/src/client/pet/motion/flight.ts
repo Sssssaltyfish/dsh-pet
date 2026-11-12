@@ -6,10 +6,11 @@
  * @module dsh-pet/src/client/pet/motion/flight
  */
 import { throwBounds, type GravityVector, type PetCollisionSlot, type ThrowState } from '../../../shared/physics.ts';
-import { integrateFlight } from './flight-integrate.ts';
+import { integrateFlight, integrateSensorFlight, sensorBounds, sensorCanMove } from './flight-integrate.ts';
+import { boxToRatio } from './geometry.ts';
 import { createPetCollision, type PetCollisionResolver } from './pet-collision.ts';
 import type { BoxPoint, Center, Viewport } from './geometry.ts';
-import type { PhysicsParams } from '../../../shared/types.ts';
+import type { PhysicsParams, Rect } from '../../../shared/types.ts';
 
 /** 飞行需要的当帧几何（px）。 */
 export interface FlightMetrics {
@@ -47,8 +48,6 @@ export interface FlightDeps {
   arena(): { slots: Record<string, PetCollisionSlot> };
   /** 本宠物 id：碰撞时用来跳过自己。 */
   petId: string;
-  /** 当前包围盒位置。 */
-  box(): BoxPoint | null;
   /** 写回包围盒位置（每帧调用）。 */
   setBox(box: BoxPoint): void;
   /** 每帧写回归一化中心：刷新或重渲染时按它重排位置，不能用 React 状态（会慢一拍）。 */
@@ -59,8 +58,10 @@ export interface FlightDeps {
   onLanding(impactVy: number): void;
   /** 本帧发生撞击（撞边或撞宠）：触觉反馈用；一帧最多回调一次，取本帧最重的那次。 */
   onImpact?(impact: FlightImpact): void;
-  /** 体感模式下的重力向量；缺省用 physics.gravity 竖直向下。只在常驻模式里读。 */
-  gravity?(): GravityVector;
+  /** 体感重力；暂无有效数据或被交互暂停时返回 null。 */
+  gravity?(): GravityVector | null;
+  /** 可见视口的边界（布局坐标）；体感飞行逐帧读取。 */
+  sensorViewport?(): Rect;
 }
 
 /** 飞行驱动：一个宠物一个实例。 */
@@ -74,8 +75,10 @@ export interface Flight {
    * @param vy - 竖直初速（px/s）。
    */
   start(px: number, py: number, vx: number, vy: number): void;
-  /** 体感常驻模式：从当前位置起步、初速为零，重力逐帧取 {@link FlightDeps.gravity}；已在常驻时无副作用。 */
-  startHeld(): void;
+  /** 有体感重力且当前位置能移动时起步，返回是否接管了位置。 */
+  startHeld(takeOver: () => void): boolean;
+  /** 结束体感起步的飞行，保留最后一次写入的落点。 */
+  settleHeld(): void;
   /**
    * 改写当前速度：碰撞结算给的是绝对速度，不是增量。
    *
@@ -94,14 +97,12 @@ export interface Flight {
   stop(): void;
   /** 是否在跑（抛掷与常驻都算）。 */
   isFlying(): boolean;
-  /** 是否处于体感常驻模式。 */
-  isHeld(): boolean;
   /** 最近一帧的速度；没在跑时为 0。 */
   velocity(): { vx: number; vy: number };
 }
 
 /** 常驻模式的速度上限（px/s）：传感器重力会持续加速，留一个硬天花板兜底。 */
-const MAX_HELD_SPEED = 6000;
+const MAX_SENSOR_SPEED = 6000;
 
 /**
  * 造飞行驱动。
@@ -117,10 +118,8 @@ export function createFlight(deps: FlightDeps): Flight {
   /** 最近一帧的状态；`null` = 没在跑。帧间它与帧内的 `current` 是同一个对象，改速度就是改下一刻的输入。 */
   let state: ThrowState | null = null;
 
-  /** 是否体感常驻模式：重力逐帧由 {@link FlightDeps.gravity} 提供，落定改用静默计时。 */
+  /** 是否由体感起步；失去体感后直接落位。普通抛掷会继续使用默认重力。 */
   let held = false;
-  /** 常驻模式的静默时长（ms）：重力为零且速度低时累计，到点停帧。 */
-  let quietMs = 0;
 
   /** 互撞结算：规则在 pet-collision，这里只把撞击转成触觉回调。 */
   const resolveCollisions: PetCollisionResolver = createPetCollision({
@@ -137,7 +136,6 @@ export function createFlight(deps: FlightDeps): Flight {
     }
     state = null;
     held = false;
-    quietMs = 0;
   };
 
   const start = (px: number, py: number, vx: number, vy: number): void => {
@@ -145,14 +143,32 @@ export function createFlight(deps: FlightDeps): Flight {
     run(px, py, vx, vy);
   };
 
-  /** 体感常驻模式：没有初速，重力逐帧由 {@link FlightDeps.gravity} 提供；已在常驻时无副作用。 */
-  const startHeld = (): void => {
-    if (frame !== null && held) return;
-    const el = deps.root();
-    const box = deps.box() ?? (el ? { x: el.getBoundingClientRect().left, y: el.getBoundingClientRect().top } : null);
-    if (box === null) return;
+  const currentSensorBounds = (metrics: FlightMetrics) => {
+    const viewport = deps.viewport();
+    const area = deps.sensorViewport?.() ?? { x: 0, y: 0, width: viewport.width, height: viewport.height };
+    return sensorBounds(area, metrics.size, metrics.sideAllow);
+  };
+
+  const startHeld = (takeOver: () => void): boolean => {
+    if (frame !== null) return false;
+    const gravity = deps.gravity?.();
+    if (!gravity) return false;
+    // CSS 角落、Home 和视口变化会重排，历史盒位置未必就是当前渲染位置。
+    const rect = deps.root()?.getBoundingClientRect();
+    if (!rect || !sensorCanMove(rect, currentSensorBounds(deps.metrics()), gravity)) return false;
+    takeOver();
     held = true;
-    run(box.x, box.y, 0, 0);
+    run(rect.left, rect.top, 0, 0);
+    return true;
+  };
+
+  const settleHeld = (): void => {
+    if (!held) return;
+    if (state !== null) {
+      const { halfW, halfH } = deps.metrics();
+      deps.commitFinal(boxToRatio(state, deps.viewport(), { w: halfW, h: halfH }));
+    }
+    stop();
   };
 
   /**
@@ -180,24 +196,16 @@ export function createFlight(deps: FlightDeps): Flight {
   };
 
   const run = (px: number, py: number, vx: number, vy: number): void => {
-    const metrics = deps.metrics();
-    const viewport = deps.viewport();
-    const physics = deps.physics();
-    const bounds = throwBounds({
-      W: viewport.width,
-      H: viewport.height,
-      size: metrics.size,
-      sideAllow: metrics.sideAllow,
-    });
+    if (frame !== null) cancelAnimationFrame(frame);
     const own = ++token;
-    quietMs = 0;
     let current: ThrowState = { x: px, y: py, vx, vy };
+    state = current;
     let last = performance.now();
     let prevGrounded = false; // 落地挤压只在空中到地面的转换帧触发一次。
     const rootEl = deps.root();
 
     /** 写回本帧位置：DOM、包围盒与归一化中心（后者供重渲染时按它重排）。 */
-    const commitPose = (at: ThrowState): Center => {
+    const commitPose = (at: ThrowState, metrics: FlightMetrics, viewport: Viewport): Center => {
       if (rootEl) {
         rootEl.style.left = at.x + 'px';
         rootEl.style.top = at.y + 'px';
@@ -205,7 +213,7 @@ export function createFlight(deps: FlightDeps): Flight {
         rootEl.style.bottom = 'auto';
       }
       deps.setBox({ x: at.x, y: at.y });
-      const center = { rx: (at.x + metrics.halfW) / viewport.width, ry: (at.y + metrics.halfH) / viewport.height };
+      const center = boxToRatio(at, viewport, { w: metrics.halfW, h: metrics.halfH });
       deps.commitLive(center);
       return center;
     };
@@ -215,39 +223,41 @@ export function createFlight(deps: FlightDeps): Flight {
       const now = performance.now();
       const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
       last = now;
+      const gravity = deps.gravity?.();
+      if (held && !gravity) {
+        settleHeld();
+        return;
+      }
+      const metrics = deps.metrics();
+      const viewport = deps.viewport();
+      const physics = deps.physics();
+      const bounds = gravity
+        ? currentSensorBounds(metrics)
+        : throwBounds({ W: viewport.width, H: viewport.height, size: metrics.size, sideAllow: metrics.sideAllow });
       const fallingVy = current.vy; // 本帧积分前的竖直速度，即落地冲击速度。
-      const gravity = held ? deps.gravity?.() : undefined;
-      const res = integrateFlight(current, dt, bounds, physics, gravity);
+      const res = gravity
+        ? integrateSensorFlight(current, dt, bounds, physics, gravity, MAX_SENSOR_SPEED)
+        : integrateFlight(current, dt, bounds, physics);
       if (res.hit !== null) deps.onImpact?.({ kind: res.hit.edge, speed: res.hit.speed });
       const integrated: ThrowState = { x: res.x, y: res.y, vx: res.vx, vy: res.vy };
       current = integrated;
       if (physics.petCollision) current = resolveCollisions(current, metrics);
       // 被撞过就不在当帧判落定：积分结果已经代表不了当前位置了。
       const disturbed = current !== integrated;
-      if (held) {
+      if (gravity) {
         const speed = Math.hypot(current.vx, current.vy);
-        if (speed > MAX_HELD_SPEED) {
-          const k = MAX_HELD_SPEED / speed;
+        if (speed > MAX_SENSOR_SPEED) {
+          const k = MAX_SENSOR_SPEED / speed;
           current = { ...current, vx: current.vx * k, vy: current.vy * k };
         }
       }
       state = current;
-      const center = commitPose(current);
+      const center = commitPose(current, metrics, viewport);
       // 落地挤压：只在空中到地面的转换帧触发，力度随冲击速度。
       const grounded = current.y >= bounds.maxY - 1;
       if (res.bounced && grounded && !prevGrounded) deps.onLanding(fallingVy);
       prevGrounded = grounded;
-      if (held) {
-        // 常驻模式没有固定地面：重力为零且速度低就累计静默，到点停帧。
-        const g = gravity ?? { gx: 0, gy: physics.gravity };
-        const isStill = Math.hypot(g.gx, g.gy) < 1 && Math.hypot(current.vx, current.vy) < 20;
-        quietMs = isStill ? quietMs + dt * 1000 : 0;
-        if (quietMs >= 300) {
-          deps.commitFinal(center);
-          stop();
-          return;
-        }
-      } else if (res.atRest && !disturbed) {
+      if (res.atRest && !disturbed) {
         deps.commitFinal(center);
         stop();
         return;
@@ -260,8 +270,8 @@ export function createFlight(deps: FlightDeps): Flight {
   return {
     impulse,
     isFlying: () => frame !== null,
-    isHeld: () => held,
     setVelocity,
+    settleHeld,
     start,
     startHeld,
     stop,

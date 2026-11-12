@@ -24,6 +24,7 @@ export interface MenuLeaf {
     | 'chat'
     | 'todo'
     | 'home'
+    | 'toggle-sensors'
     | 'reload'
     | 'set-display'
     | 'sleep'

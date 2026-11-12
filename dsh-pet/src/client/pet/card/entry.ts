@@ -37,6 +37,7 @@ import type { CardStateApi } from './state.ts';
 import type { Drag } from '../motion/drag.ts';
 import type { MenuActions } from '../menu-actions.ts';
 import type { RuntimePet } from '../types.ts';
+import type { DevicePhysics } from '../device-physics.ts';
 import type * as ReactNS from 'react';
 
 /** 注入的 react 能力。 */
@@ -57,6 +58,8 @@ export interface CardEntryInput {
   live: ReactNS.MutableRefObject<CardLive>;
   /** 运动面：开菜单前要停飞与停走。 */
   motion: CardMotion;
+  /** 体感菜单读写页面级控制器。 */
+  sensors: ReactNS.MutableRefObject<DevicePhysics | null>;
   /** 拖拽驱动：拖拽中或刚拖完不弹菜单。 */
   drag: Drag;
   /** 第三方菜单项快照；只在右键那一刻读。 */
@@ -89,6 +92,25 @@ export interface CardEntry {
   onPointerLeave: () => void;
 }
 
+function sensorMenuLabel(controller: DevicePhysics | null): string {
+  switch (controller?.status) {
+    case 'active':
+      return '关闭体感物理';
+    case 'requesting':
+      return '取消传感器授权';
+    case 'waiting':
+      return '体感等待数据（点击关闭）';
+    case 'paused':
+      return '体感已暂停（点击关闭）';
+    case 'denied':
+      return '体感未授权（点击重试）';
+    case 'unavailable':
+      return controller.enabled ? '体感无数据（点击关闭）' : '体感不可用（点击重试）';
+    default:
+      return '开启体感物理';
+  }
+}
+
 /**
  * 造浮层入口的 hook。
  *
@@ -104,6 +126,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
     // 右键菜单与对话弹窗当前的句柄，卸载或重开前清理。对话弹窗还要按住说话遥控开录/收尾。
     const menuRef = useRef<{ close: () => void } | null>(null);
     const chatRef = useRef<ChatDialogMount | null>(null);
+    live.current.sensorBlocked = () => menuRef.current !== null || chatRef.current !== null;
 
     /** 把提示框摆到光标右下，放不下时翻边并夹回视口。
      *  直接写 DOM style：每次鼠标移动都走 React 状态会让整个 PetCard 重渲染。
@@ -140,6 +163,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
     /** 挂载对话弹窗：弹窗贴在身体命中区右上角，视频框右上角不等于宠物右上角；超出视口夹回。 */
     const mountChat = (seed: { image?: File; encoded?: EncodedImage }): void => {
       if (chatRef.current) chatRef.current.close();
+      motion.flight.settleHeld();
       const hitRect = stage()?.querySelector('.dsh-pet-hit')?.getBoundingClientRect();
       chatRef.current = mountChatDialog({
         petId: cfgRef.current.id,
@@ -157,6 +181,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
         },
         onClose: () => {
           chatRef.current = null;
+          motion.wakeSensors();
         },
       });
     };
@@ -359,6 +384,7 @@ export function createCardEntry(rt: CardEntryRuntime) {
         { label: '待办事项', action: 'todo', hint: TODO_HOTKEY_HINT },
         { label: '碎碎念', action: 'whisper' },
         { label: '对话', action: 'chat', hint: CHAT_HOTKEY_HINT },
+        { label: sensorMenuLabel(input.sensors.current), action: 'toggle-sensors' },
         ...(memes ? [memes] : []),
         ...(canSleep ? [sleepItem] : []),
       ];
@@ -377,19 +403,39 @@ export function createCardEntry(rt: CardEntryRuntime) {
       e.preventDefault();
       e.stopPropagation(); // 不触碰 DSH 页面的菜单与右键处理。
       if (drag.isActive() || drag.justDragged()) return;
+      motion.flight.settleHeld();
       motion.flight.stop(); // 菜单弹出前停住飞行中的宠物。
       motion.stopMove(); // 菜单悬停期间宠物不漫游。
       if (menuRef.current) menuRef.current.close();
+      const viewport = window.visualViewport;
+      const closeOnViewportChange = () => menuRef.current?.close();
       menuRef.current = mountContextMenu({
         tree,
         x: e.clientX,
         y: e.clientY,
-        onAction: runMenuAction,
+        ...(viewport && {
+          clamp: { x: viewport.offsetLeft, y: viewport.offsetTop, w: viewport.width, h: viewport.height },
+        }),
+        onAction: (leaf) => {
+          if (leaf.action !== 'toggle-sensors') {
+            runMenuAction(leaf);
+            return;
+          }
+          const controller = input.sensors.current;
+          if (controller?.enabled) controller.disable();
+          else void controller?.enable();
+        },
         // 菜单被点外或 Esc 关闭时置空句柄，避免残留引用。
         onClose: () => {
-          if (menuRef.current) menuRef.current = null;
+          viewport?.removeEventListener('resize', closeOnViewportChange);
+          viewport?.removeEventListener('scroll', closeOnViewportChange);
+          menuRef.current = null;
+          motion.wakeSensors();
         },
       });
+      // 键盘或缩放改变可见范围后，旧菜单的位置与滚动范围已失效。
+      viewport?.addEventListener('resize', closeOnViewportChange);
+      viewport?.addEventListener('scroll', closeOnViewportChange);
     };
 
     return {

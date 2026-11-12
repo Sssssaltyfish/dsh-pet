@@ -44,13 +44,13 @@ export function makeMobileCard(rt: SettingsRuntime): FunctionComponent<MobileCar
             toggleCell('physicsHaptic', physics.hapticEnabled !== false, busy, (v) =>
               props.onChange({ hapticEnabled: v }),
             ),
-            toggleCell('physicsTilt', physics.tiltGravity === true, busy, (v) => {
+            toggleCell('physicsTilt', physics.tiltGravity !== false, busy, (v) => {
               // iOS 13+ 要求传感器权限必须在用户手势里申请；开关点击正好是那次手势。
               // 只申请这个开关要用的种类，不顺手把摇一摇的权限也问了。
               if (v) void requestMotionPermission({ tilt: true, shake: false });
               props.onChange({ tiltGravity: v });
             }),
-            toggleCell('physicsShake', physics.shakeThrow === true, busy, (v) => {
+            toggleCell('physicsShake', physics.shakeThrow !== false, busy, (v) => {
               if (v) void requestMotionPermission({ tilt: false, shake: true });
               props.onChange({ shakeThrow: v });
             }),

@@ -7,7 +7,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { DEFAULT_PHYSICS } from '../../../shared/physics/constants.ts';
-import type { PetCollisionSlot } from '../../../shared/physics.ts';
+import type { GravityVector, PetCollisionSlot } from '../../../shared/physics.ts';
 import type { PhysicsParams } from '../../../shared/types.ts';
 import { createFlight, type FlightDeps } from './flight.ts';
 
@@ -18,7 +18,7 @@ const metrics = { size: 200, halfW: 100, halfH: 56.25, sideAllow: 62.5, bottomPa
 function fakeRoot() {
   return {
     style: { left: '', top: '', right: '', bottom: '' },
-    getBoundingClientRect: () => ({ left: 400, top: 100 }),
+    getBoundingClientRect: () => ({ x: 400, y: 100, left: 400, top: 100 }),
   } as unknown as HTMLDivElement;
 }
 
@@ -63,6 +63,8 @@ function harness(
     petId?: string;
     arena?: { slots: Record<string, PetCollisionSlot> };
     physics?: PhysicsParams;
+    gravity?: FlightDeps['gravity'];
+    sensorViewport?: FlightDeps['sensorViewport'];
   } = {},
 ) {
   const root = fakeRoot();
@@ -79,13 +81,14 @@ function harness(
     physics: () => physics,
     arena: () => arena,
     petId: opts.petId ?? 'main',
-    box: () => box,
     setBox: (next) => {
       box = next;
     },
     commitLive: (center) => live.push(center),
     commitFinal: (center) => finals.push(center),
     onLanding: (impactVy) => landings.push(impactVy),
+    ...(opts.gravity && { gravity: opts.gravity }),
+    ...(opts.sensorViewport && { sensorViewport: opts.sensorViewport }),
   };
   return { flight: createFlight(deps), root, live, finals, landings, box: () => box };
 }
@@ -262,6 +265,94 @@ describe('createFlight —— 两只互撞不放大速度', () => {
         }
       }
       assert.ok(peak <= 601, `碰撞不应放大速度：峰值 ${peak}`);
+    } finally {
+      frames.restore();
+    }
+  });
+});
+
+describe('createFlight —— 体感飞行', () => {
+  test('已有普通抛掷接受体感重力，读数消失后恢复向下重力', () => {
+    const frames = withFakeFrames();
+    try {
+      let gravity: GravityVector | null = { gx: 800, gy: -800 };
+      const { flight, box } = harness({ gravity: () => gravity });
+      flight.start(400, 100, 0, 0);
+      frames.tick(16);
+      assert.ok(box()!.x > 400 && box()!.y < 100);
+      const vy = flight.velocity().vy;
+      gravity = null;
+      frames.tick(16);
+      assert.ok(flight.velocity().vy > vy);
+      assert.equal(flight.isFlying(), true);
+    } finally {
+      frames.restore();
+    }
+  });
+
+  test('键盘与视口偏移改变碰撞范围，顶部封闭，贴边时停帧', () => {
+    const frames = withFakeFrames();
+    try {
+      const visible = { x: 20, y: 0, width: 900, height: 400 };
+      const { flight, box, finals } = harness({
+        physics: { ...DEFAULT_PHYSICS, ceilingBounce: false },
+        gravity: () => ({ gx: 0, gy: -1200 }),
+        sensorViewport: () => visible,
+      });
+      assert.equal(
+        flight.startHeld(() => {}),
+        true,
+      );
+      frames.tick(16);
+      visible.y = 40;
+      for (let i = 0; i < 180 && frames.queued > 0; i++) {
+        frames.tick(16);
+        assert.ok(box()!.y >= 40);
+      }
+      assert.equal(box()!.y, 40);
+      assert.equal(finals.length, 1);
+      assert.equal(frames.queued, 0);
+    } finally {
+      frames.restore();
+    }
+  });
+
+  test('从新渲染位置起步；视口缩得比宠物还窄时夹到中线', () => {
+    const frames = withFakeFrames();
+    try {
+      const { flight, box, root } = harness({
+        gravity: () => ({ gx: 600, gy: 0 }),
+        sensorViewport: () => ({ x: 15, y: 0, width: 25, height: 400 }),
+      });
+      root.getBoundingClientRect = () => ({ x: 66, y: 45, left: 66, top: 45 }) as DOMRect;
+      assert.equal(
+        flight.startHeld(() => {}),
+        true,
+      );
+      frames.tick(16);
+      assert.deepEqual(box(), { x: 15 + (25 - metrics.size) / 2, y: 45 });
+      assert.equal(frames.queued, 0);
+    } finally {
+      frames.restore();
+    }
+  });
+
+  test('传感器静默时体感起步的宠物停在最后一个位置', () => {
+    const frames = withFakeFrames();
+    try {
+      let gravity: GravityVector | null = { gx: 500, gy: 0 };
+      const { flight, finals, root } = harness({ gravity: () => gravity });
+      assert.equal(
+        flight.startHeld(() => {}),
+        true,
+      );
+      frames.tick(16);
+      const before = root.style.left;
+      gravity = null;
+      frames.tick(16);
+      assert.equal(root.style.left, before);
+      assert.equal(finals.length, 1);
+      assert.equal(frames.queued, 0);
     } finally {
       frames.restore();
     }

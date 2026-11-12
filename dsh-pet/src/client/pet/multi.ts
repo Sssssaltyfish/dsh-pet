@@ -46,6 +46,7 @@ import type { PetCollisionSlot } from '../../shared/physics.ts';
 import type { WorkStatusSnapshot } from '../../shared/work-status.ts';
 import type { PetCardProps } from './card/props.ts';
 import type { PetRuntime, RuntimePet } from './types.ts';
+import { createDevicePhysics, type DevicePhysics } from './device-physics.ts';
 import { setClickSoundEnabled } from './click-sound.ts';
 import { setSurface, setVoiceConfig, setVoiceNotifyEnabled } from '../../shared/voice.ts';
 import { runStatePoll } from './state-poll.ts';
@@ -71,6 +72,16 @@ export function createPetMulti(
   return function PetMulti() {
     const [pets, setPets] = useState<Pet[]>([]);
     const [ready, setReady] = useState(false);
+    // 权限、传感器读数与视口事件由页面统一管理。
+    const sensors = useRef<DevicePhysics | null>(null);
+    useEffect(() => {
+      const controller = createDevicePhysics();
+      sensors.current = controller;
+      return () => {
+        sensors.current = null;
+        controller.dispose();
+      };
+    }, []);
     // 碰撞站场：每只 PetCard 注册槽位，纯 ref 同步，不触发重渲染。
     const arenaRef = useRef<{ slots: Record<string, PetCollisionSlot> }>({ slots: {} });
     // 余额状态：容器统一拉取，PetCard 共享；两个 tick 分别驱动动画与文字说明。
@@ -399,6 +410,7 @@ export function createPetMulti(
             sleepTick,
             menuItemsRef,
             arena: arenaRef,
+            sensors,
           });
         })
       : null;

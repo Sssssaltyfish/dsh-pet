@@ -107,6 +107,8 @@ export interface DragCard {
   setBox: (box: BoxPoint) => void;
   /** 原地放下：提交夹取后的归一化中心。 */
   commitPlace: (box: BoxPoint) => void;
+  /** 按压或拖拽收尾后，允许体感从当前渲染位置起步。 */
+  onSettled?: () => void;
 }
 
 /** 拖拽驱动对外的读写面。 */
@@ -127,6 +129,8 @@ export interface Drag {
   isActive(): boolean;
   /** 是否刚拖完：松手后的短窗口内为真，右键菜单要忽略这段时间。 */
   justDragged(): boolean;
+  /** 本次按压已打开长按菜单。 */
+  longPressed(): boolean;
 }
 
 /** 复位的按下状态：避免每个实例各写一份字面量。 */
@@ -192,6 +196,7 @@ export function createDrag(card: () => DragCard): Drag {
   /** 「刚拖完」窗口的截止时刻（ms）；用时刻而不是定时器，读的时候再判，少一个待清理的句柄。 */
   let justDraggedUntil = 0;
   let pressScoreFired = false;
+  let longPressed = false;
   let lastPressAt = 0;
   /** 指针轨迹采样，供初速估算。 */
   let trail: DragSample[] = [];
@@ -220,7 +225,8 @@ export function createDrag(card: () => DragCard): Drag {
     onMenu: (target) => {
       // 结束本次按压：松手时既不抛掷也不播点击动画。
       press.active = false;
-      pressScoreFired = true;
+      longPressed = true;
+      target.el.classList.remove('dragging');
       if (target.el.hasPointerCapture(target.pointerId)) target.el.releasePointerCapture(target.pointerId);
       log(card().petId, '-> [TOUCH-MENU]');
       // 与鼠标右键同一入口：派发 contextmenu 交给右键处理。
@@ -281,6 +287,9 @@ export function createDrag(card: () => DragCard): Drag {
     const c = card();
     // 只认左键：右键会与菜单判定打架，两端一致。
     if (e.button !== 0) return;
+    // 禁止触屏松手时补发鼠标按下，否则会立即关闭已打开的长按菜单。
+    if (e.pointerType === 'touch') e.preventDefault();
+    longPressed = false;
     // 用户点了或拖了这只宠物就是接管：立即本地解冻并 force 释放宿主锁。
     // 先本地解冻是为了不等一次往返；此刻确实有锁，乐观释放是安全的。
     if (c.isFrozen()) c.releaseLock();
@@ -420,6 +429,7 @@ export function createDrag(card: () => DragCard): Drag {
       settleRelease(c, point);
     }
     restoreTip(c, point);
+    c.onSettled?.();
   };
 
   const onPointerUp = (e: ReactNS.PointerEvent<HTMLDivElement>): void => {
@@ -428,7 +438,7 @@ export function createDrag(card: () => DragCard): Drag {
 
   const onClick = (): void => {
     const c = card();
-    if (press.active || press.dragging || performance.now() < justDraggedUntil) return;
+    if (longPressed || press.active || press.dragging || performance.now() < justDraggedUntil) return;
     // 本次按下已触发过积分：只收手停住，不再播普通点击动画。
     if (pressScoreFired) {
       pressScoreFired = false;
@@ -453,12 +463,17 @@ export function createDrag(card: () => DragCard): Drag {
 
   return {
     isActive: () => press.active,
+    longPressed: () => longPressed,
     justDragged: () => performance.now() < justDraggedUntil,
     onClick,
     onPointerDown,
     onPointerMove,
     onPointerUp,
     stopFollow: follow.stop,
-    dispose: clearMouseFallback,
+    dispose: () => {
+      clearMouseFallback();
+      touchPress.cancel();
+      follow.stop();
+    },
   };
 }

@@ -32,6 +32,8 @@ export interface CardLive {
   center: () => { x: number; y: number };
   /** 停走位与位置跟随。 */
   stopMove: () => void;
+  /** 右键菜单或对话正在占用宠物。 */
+  sensorBlocked: () => boolean;
   /** 把悬浮提示摆到光标旁。 */
   placeTip: (x: number, y: number) => void;
   /** 悬浮提示当前是否点亮。 */
